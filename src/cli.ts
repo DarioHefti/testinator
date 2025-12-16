@@ -13,6 +13,8 @@ interface CliArgs {
   model?: string;
 }
 
+const VALID_PROVIDERS = ['openai', 'anthropic', 'azure', 'google'] as const;
+
 function printUsage(): void {
   console.log(`
 Usage: testinator <spec-folder> --base-url <url> [options]
@@ -29,6 +31,9 @@ Options:
   --help, -h              Show this help message
 
 Environment Variables:
+  TESTINATOR_PROVIDER     Default LLM provider (overridden by --provider)
+  TESTINATOR_MODEL        Default model name (overridden by --model)
+  
   OPENAI_API_KEY          Required for OpenAI provider
   ANTHROPIC_API_KEY       Required for Anthropic provider
   AZURE_OPENAI_API_KEY    Required for Azure provider
@@ -58,8 +63,20 @@ function parseArgs(argv: string[]): CliArgs | null {
 
   let specFolder: string | undefined;
   let baseUrl: string | undefined;
+  
+  // Start with env var defaults, CLI args will override
   let provider: LLMProvider = 'openai';
-  let model: string | undefined;
+  let model: string | undefined = process.env.TESTINATOR_MODEL;
+
+  // Check TESTINATOR_PROVIDER env var
+  const envProvider = process.env.TESTINATOR_PROVIDER;
+  if (envProvider) {
+    if (!VALID_PROVIDERS.includes(envProvider as typeof VALID_PROVIDERS[number])) {
+      console.error(`Error: Invalid TESTINATOR_PROVIDER "${envProvider}". Must be one of: ${VALID_PROVIDERS.join(', ')}`);
+      return null;
+    }
+    provider = envProvider as LLMProvider;
+  }
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -68,8 +85,8 @@ function parseArgs(argv: string[]): CliArgs | null {
       baseUrl = args[++i];
     } else if (arg === '--provider') {
       const p = args[++i];
-      if (!['openai', 'anthropic', 'azure', 'google'].includes(p)) {
-        console.error(`Error: Invalid provider "${p}". Must be one of: openai, anthropic, azure, google`);
+      if (!VALID_PROVIDERS.includes(p as typeof VALID_PROVIDERS[number])) {
+        console.error(`Error: Invalid provider "${p}". Must be one of: ${VALID_PROVIDERS.join(', ')}`);
         return null;
       }
       provider = p as LLMProvider;

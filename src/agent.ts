@@ -5,7 +5,157 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createAzure } from '@ai-sdk/azure';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
+import { spawn, spawnSync } from 'child_process';
+import { existsSync } from 'fs';
 import { AgentResultSchema, type AgentResult, type LLMProvider, DEFAULT_MODELS } from './types.js';
+
+// Track if we've already ensured browsers are installed this session
+let browsersEnsured = false;
+let chromiumPath: string | null = null;
+
+/**
+ * Find system-installed Chromium/Chrome browser.
+ * Returns the path if found, null otherwise.
+ */
+function findSystemChromium(): string | null {
+  const platform = process.platform;
+  
+  const candidates: string[] = [];
+  
+  if (platform === 'win32') {
+    // Windows paths
+    candidates.push(
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+      'C:\\Program Files\\Chromium\\Application\\chrome.exe',
+      `${process.env.LOCALAPPDATA}\\Chromium\\Application\\chrome.exe`,
+    );
+  } else if (platform === 'darwin') {
+    // macOS paths
+    candidates.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      `${process.env.HOME}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+      `${process.env.HOME}/Applications/Chromium.app/Contents/MacOS/Chromium`,
+    );
+  } else {
+    // Linux paths
+    candidates.push(
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/snap/bin/chromium',
+      '/var/lib/flatpak/exports/bin/com.github.nickvergessen.chromium',
+    );
+    
+    // Also try 'which' command on Linux/macOS
+    try {
+      const result = spawnSync('which', ['chromium'], { encoding: 'utf-8' });
+      if (result.status === 0 && result.stdout.trim()) {
+        candidates.unshift(result.stdout.trim());
+      }
+    } catch {}
+    
+    try {
+      const result = spawnSync('which', ['chromium-browser'], { encoding: 'utf-8' });
+      if (result.status === 0 && result.stdout.trim()) {
+        candidates.unshift(result.stdout.trim());
+      }
+    } catch {}
+    
+    try {
+      const result = spawnSync('which', ['google-chrome'], { encoding: 'utf-8' });
+      if (result.status === 0 && result.stdout.trim()) {
+        candidates.unshift(result.stdout.trim());
+      }
+    } catch {}
+  }
+  
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Ensure Playwright browsers are available.
+ * First tries to find system Chromium, then falls back to installing Playwright's bundled browser.
+ * Works across Windows, macOS, and Linux.
+ */
+async function ensurePlaywrightBrowsers(): Promise<void> {
+  if (browsersEnsured) {
+    return;
+  }
+
+  // First, check for system Chromium
+  console.log('  [Playwright] Checking for browser...');
+  chromiumPath = findSystemChromium();
+  
+  if (chromiumPath) {
+    console.log(`  [Playwright] Found system browser: ${chromiumPath}`);
+    browsersEnsured = true;
+    return;
+  }
+  
+  // No system browser found, install Playwright's bundled one
+  console.log('  [Playwright] No system browser found, installing Chromium...');
+  
+  const isWindows = process.platform === 'win32';
+  
+  return new Promise((resolve) => {
+    const proc = spawn(
+      isWindows ? 'cmd.exe' : 'npx',
+      isWindows 
+        ? ['/c', 'npx', 'playwright', 'install', 'chromium']
+        : ['playwright', 'install', 'chromium'],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false,
+      }
+    );
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        browsersEnsured = true;
+        if (stdout.includes('Downloading') || stdout.includes('Installing')) {
+          console.log('  [Playwright] Browser installed successfully');
+        } else {
+          console.log('  [Playwright] Browser ready');
+        }
+        resolve();
+      } else {
+        console.warn(`  [Playwright] Browser install returned code ${code}`);
+        if (stderr) {
+          console.warn(`  [Playwright] ${stderr.slice(0, 200)}`);
+        }
+        browsersEnsured = true;
+        resolve();
+      }
+    });
+
+    proc.on('error', (err) => {
+      console.warn(`  [Playwright] Could not run browser install: ${err.message}`);
+      browsersEnsured = true;
+      resolve();
+    });
+  });
+}
 
 /**
  * Normalize tool schemas for Azure OpenAI compatibility.
@@ -175,14 +325,24 @@ export async function runSpec(
   provider: LLMProvider = 'openai',
   model?: string
 ): Promise<AgentResult> {
+  // Ensure Playwright browsers are installed before proceeding
+  await ensurePlaywrightBrowsers();
+
   // Create MCP transport for Playwright
   // On Windows, we need to spawn via cmd.exe to properly resolve npx
   const isWindows = process.platform === 'win32';
+  
+  // Build MCP args - include --executable-path if we found a system browser
+  const mcpArgs = ['@playwright/mcp@latest', '--headless'];
+  if (chromiumPath) {
+    mcpArgs.push('--executable-path', chromiumPath);
+  }
+  
   const transport = new StdioMCPTransport({
     command: isWindows ? 'cmd.exe' : 'npx',
     args: isWindows 
-      ? ['/c', 'npx', '@playwright/mcp@latest', '--headless']
-      : ['@playwright/mcp@latest', '--headless'],
+      ? ['/c', 'npx', ...mcpArgs]
+      : mcpArgs,
   });
 
   // Create MCP client
