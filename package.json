@@ -1,0 +1,45 @@
+{
+  "name": "testinator",
+  "version": "1.0.0",
+  "description": "Lightweight AI agent for E2E testing using Playwright MCP - supports multiple LLM providers",
+  "type": "module",
+  "main": "dist/main.js",
+  "bin": {
+    "testinator": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "e2e",
+    "testing",
+    "ai",
+    "playwright",
+    "mcp",
+    "multi-llm"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ai": "^4.1.0",
+    "@ai-sdk/openai": "^1.1.0",
+    "@ai-sdk/anthropic": "^1.1.0",
+    "@ai-sdk/azure": "^1.1.0",
+    "@ai-sdk/google": "^1.1.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
