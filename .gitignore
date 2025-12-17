@@ -20,7 +20,7 @@ dist/
 Thumbs.db
 
 # Test outputs
-examples/specs/index.html
+examples/specs/reports/
 
 # Logs
 *.log

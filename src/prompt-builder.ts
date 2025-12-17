@@ -2,7 +2,15 @@
  * Build the system prompt for the E2E testing agent.
  * Single responsibility: Prompt construction.
  */
-export function buildSystemPrompt(baseUrl: string, specName: string): string {
+export function buildSystemPrompt(baseUrl: string, specName: string, screenshotPath?: string): string {
+  // Note: Playwright MCP's screenshot tool returns image data (base64) and does not
+  // write files to disk. The runner captures and persists the final screenshot itself.
+  // Keeping this out of the model instructions avoids unreliable "file saving" attempts.
+  const screenshotInstruction = screenshotPath
+    ? `\n## Final Screenshot
+A final screenshot will be captured automatically for the report (${screenshotPath}).`
+    : '';
+
   return `You are an automated E2E test runner. Your job is to execute end-to-end tests based on markdown specifications.
 
 ## Configuration
@@ -23,6 +31,7 @@ export function buildSystemPrompt(baseUrl: string, specName: string): string {
 - Be thorough but efficient - verify what the spec asks for
 - If an element cannot be found or an action fails, the test should FAIL
 - If all specified behaviors work as expected, the test should PASS
+${screenshotInstruction}
 
 ## Output
 When you have completed all checks, call the 'report_result' tool with:

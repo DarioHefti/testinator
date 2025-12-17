@@ -34,6 +34,7 @@ export interface TestResult {
   isToolingError?: boolean;
   toolingErrorMessage?: string;
   criteria?: CriterionResult[];
+  screenshotPath?: string;
 }
 
 /**

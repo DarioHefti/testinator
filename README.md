@@ -32,8 +32,15 @@ npx testinator ./specs --base-url https://your-app.com
 ```
 or
 ```bash
-node dist/ ./specs --base-url https://your-app.com
+ node dist/cli.js ./examples/specs --base-url https://maps.google.com
 ```
+
+### Report output
+
+Each run writes a fresh report folder inside your spec folder:
+
+- `./specs/reports/index.html` (summary report)
+- `./specs/reports/images/*.jpg` (final-state screenshots, one per spec)
 
 ### Options
 

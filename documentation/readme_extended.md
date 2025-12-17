@@ -32,7 +32,7 @@ Testinator is a **Node/TypeScript CLI** that runs **Markdown-written E2E specs**
 5. For each spec file, the runner calls the agent (`runSpec`).
 6. The agent starts Playwright MCP (headless) and asks the LLM to execute the markdown spec using MCP browser tools.
 7. The LLM is expected to call `report_result { success, details }` at the end.
-8. The runner aggregates results and writes an HTML report to `<specFolder>/index.html`.
+8. The runner aggregates results and writes an HTML report to `<specFolder>/reports/index.html`, plus final-state screenshots to `<specFolder>/reports/images/*.jpg`.
 9. The CLI exits with `0` if all passed, otherwise `1`.
 
 ---
@@ -132,7 +132,8 @@ Specs run **sequentially** (no parallelism).
 
 After all specs finish, the runner writes:
 
-- `<specFolder>/index.html`
+- `<specFolder>/reports/index.html`
+- `<specFolder>/reports/images/*.jpg` (final-state screenshot per spec)
 
 The report includes:
 
@@ -142,7 +143,7 @@ The report includes:
   - duration
   - `details` text (pre-wrapped)
 
-This is a standalone static HTML file.
+This is a standalone static HTML file that references images from the `reports/images/` folder.
 
 ---
 

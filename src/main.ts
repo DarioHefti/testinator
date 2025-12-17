@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import type { RunSummary, TestResult, LLMProvider, AgentResult } from './types.js';
 import { runSpec, runSpecWithClient, checkLLMConnection } from './agent.js';
@@ -22,6 +22,14 @@ export class Main {
     // Quick check to verify LLM connection before running tests
     await checkLLMConnection(provider, model);
 
+    // Clean up and create fresh reports folder structure
+    const reportsDir = join(folderPath, 'reports');
+    const imagesDir = join(reportsDir, 'images');
+    if (existsSync(reportsDir)) {
+      rmSync(reportsDir, { recursive: true, force: true });
+    }
+    mkdirSync(imagesDir, { recursive: true });
+
     // Find all .md files in the folder
     const mdFiles = this.findMarkdownFiles(folderPath);
 
@@ -34,12 +42,12 @@ export class Main {
     if (concurrency === 1) {
       // Run sequentially
       for (const filePath of mdFiles) {
-        const result = await this.runSingleSpec(filePath, baseUrl, provider, model, headless);
+        const result = await this.runSingleSpec(filePath, baseUrl, provider, model, headless, imagesDir);
         results.push(result);
       }
     } else {
       // Run in parallel with limited concurrency
-      const allResults = await this.runSpecsInParallel(mdFiles, baseUrl, provider, model, headless, concurrency);
+      const allResults = await this.runSpecsInParallel(mdFiles, baseUrl, provider, model, headless, concurrency, imagesDir);
       results.push(...allResults);
     }
 
@@ -47,11 +55,17 @@ export class Main {
       results,
       allPassed: results.every((r) => r.success),
       totalDurationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
     };
 
-    // Generate HTML report
-    this.generateHtmlReport(folderPath, summary, provider, model);
+    // Generate HTML report in reports folder
+    this.generateHtmlReport(reportsDir, summary, provider, model);
 
     return summary;
   }
@@ -64,16 +78,20 @@ export class Main {
     baseUrl: string,
     provider: LLMProvider,
     model: string | undefined,
-    headless: boolean
+    headless: boolean,
+    imagesDir: string
   ): Promise<TestResult> {
     const specName = basename(filePath);
+    const screenshotName = this.getScreenshotName(specName);
+    const screenshotFullPath = join(imagesDir, screenshotName);
     console.log(`Running: ${specName}...`);
 
     const specStartTime = Date.now();
 
     try {
       const markdown = readFileSync(filePath, 'utf-8');
-      const agentResult = await runSpec(markdown, baseUrl, specName, provider, model, headless);
+      // Pass absolute path - Playwright MCP should save directly there
+      const agentResult = await runSpec(markdown, baseUrl, specName, provider, model, headless, screenshotFullPath);
 
       const result: TestResult = {
         specName,
@@ -84,6 +102,7 @@ export class Main {
         isToolingError: agentResult.isToolingError,
         toolingErrorMessage: agentResult.toolingErrorMessage,
         criteria: agentResult.criteria,
+        screenshotPath: existsSync(screenshotFullPath) ? `images/${screenshotName}` : undefined,
       };
 
       const status = result.success ? '✓ PASS' : '✗ FAIL';
@@ -103,6 +122,7 @@ export class Main {
         success: false,
         details: `Agent error: ${errorMessage}`,
         durationMs: Date.now() - specStartTime,
+        screenshotPath: existsSync(screenshotFullPath) ? `images/${screenshotName}` : undefined,
       };
 
       console.log(`  ✗ ERROR ${specName} (${(result.durationMs / 1000).toFixed(2)}s)`);
@@ -121,7 +141,8 @@ export class Main {
     provider: LLMProvider,
     model: string | undefined,
     headless: boolean,
-    concurrency: number
+    concurrency: number,
+    imagesDir: string
   ): Promise<TestResult[]> {
     // Create pool with the requested concurrency (limited by number of files)
     const poolSize = Math.min(concurrency, files.length);
@@ -138,7 +159,7 @@ export class Main {
         const filePath = queue.shift();
         if (!filePath) return;
 
-        const result = await this.runSpecWithPool(pool, filePath, baseUrl, provider, model);
+        const result = await this.runSpecWithPool(pool, filePath, baseUrl, provider, model, imagesDir);
         results.push(result);
 
         // Continue with next file if any
@@ -175,9 +196,12 @@ export class Main {
     filePath: string,
     baseUrl: string,
     provider: LLMProvider,
-    model: string | undefined
+    model: string | undefined,
+    imagesDir: string
   ): Promise<TestResult> {
     const specName = basename(filePath);
+    const screenshotName = this.getScreenshotName(specName);
+    const screenshotFullPath = join(imagesDir, screenshotName);
     const { client, id } = await pool.acquire();
     
     console.log(`Running: ${specName} (worker ${id})...`);
@@ -185,7 +209,8 @@ export class Main {
 
     try {
       const markdown = readFileSync(filePath, 'utf-8');
-      const agentResult = await runSpecWithClient(client, markdown, baseUrl, specName, provider, model);
+      // Pass absolute path - Playwright MCP should save directly there
+      const agentResult = await runSpecWithClient(client, markdown, baseUrl, specName, provider, model, screenshotFullPath);
 
       const result: TestResult = {
         specName,
@@ -196,6 +221,7 @@ export class Main {
         isToolingError: agentResult.isToolingError,
         toolingErrorMessage: agentResult.toolingErrorMessage,
         criteria: agentResult.criteria,
+        screenshotPath: existsSync(screenshotFullPath) ? `images/${screenshotName}` : undefined,
       };
 
       const status = result.success ? '✓ PASS' : '✗ FAIL';
@@ -215,6 +241,7 @@ export class Main {
         success: false,
         details: `Agent error: ${errorMessage}`,
         durationMs: Date.now() - specStartTime,
+        screenshotPath: existsSync(screenshotFullPath) ? `images/${screenshotName}` : undefined,
       };
 
       console.log(`  ✗ ERROR ${specName} (${(result.durationMs / 1000).toFixed(2)}s) [worker ${id}]`);
@@ -240,10 +267,18 @@ export class Main {
   }
 
   /**
+   * Generate screenshot filename from spec name (e.g., "homepage-smoke.md" -> "homepage-smoke.jpg")
+   */
+  private getScreenshotName(specName: string): string {
+    // @playwright/mcp's `browser_take_screenshot` returns a JPEG image.
+    return specName.replace(/\.md$/i, '.jpg');
+  }
+
+  /**
    * Generate an HTML report of the test results
    */
   private generateHtmlReport(
-    folderPath: string,
+    reportsDir: string,
     summary: RunSummary,
     provider: LLMProvider,
     model?: string
@@ -378,6 +413,77 @@ export class Main {
       white-space: pre-wrap;
       word-break: break-word;
     }
+    .screenshot-container {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .screenshot-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .screenshot-btn:hover {
+      background: #1f2937;
+      border-color: var(--text-muted);
+    }
+    /* Modal styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.8);
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .modal.show {
+      display: flex;
+    }
+    .modal-content {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow: auto;
+      position: relative;
+      padding: 1rem;
+    }
+    .modal-img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 2rem;
+      height: 2rem;
+      font-size: 1.25rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover {
+      background: rgba(0,0,0,0.8);
+    }
   </style>
 </head>
 <body>
@@ -416,10 +522,41 @@ export class Main {
       ${summary.results.map((r) => this.renderResultCard(r)).join('')}
     </div>
   </div>
+
+  <!-- Modal -->
+  <div id="screenshotModal" class="modal" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <img id="modalImage" class="modal-img" src="" alt="Screenshot" />
+    </div>
+  </div>
+
+  <script>
+    function showScreenshot(path) {
+      const modal = document.getElementById('screenshotModal');
+      const img = document.getElementById('modalImage');
+      img.src = path;
+      modal.classList.add('show');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('screenshotModal');
+      modal.classList.remove('show');
+      const img = document.getElementById('modalImage');
+      img.src = '';
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeModal();
+      }
+    });
+  </script>
 </body>
 </html>`;
 
-    const reportPath = join(folderPath, 'index.html');
+    const reportPath = join(reportsDir, 'index.html');
     writeFileSync(reportPath, html, 'utf-8');
     console.log(`HTML report written to: ${reportPath}`);
   }
@@ -445,6 +582,12 @@ export class Main {
       detailsContent = `<div class="fallback-details">${this.escapeHtml(r.details)}</div>`;
     }
 
+    const screenshotHtml = r.screenshotPath
+      ? `<div class="screenshot-container">
+          <button onclick="showScreenshot('${this.escapeHtml(r.screenshotPath)}')" class="screenshot-btn">📷 Show Final Screenshot</button>
+        </div>`
+      : '';
+
     return `
       <div class="result-card">
         <div class="result-header">
@@ -455,6 +598,7 @@ export class Main {
         <div class="result-details">
           ${toolingErrorHtml}
           ${detailsContent}
+          ${screenshotHtml}
         </div>
       </div>`;
   }

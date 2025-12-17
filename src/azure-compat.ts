@@ -1,11 +1,11 @@
-import { type CoreTool } from 'ai';
+import { type Tool } from 'ai';
 
 /**
  * Normalize tool schemas for Azure OpenAI compatibility.
  * Azure requires all properties to be in the 'required' array.
  * Single responsibility: Azure-specific schema normalization.
  */
-export function normalizeToolsForAzure(tools: Record<string, CoreTool>): Record<string, CoreTool> {
+export function normalizeToolsForAzure(tools: Record<string, Tool>): Record<string, Tool> {
   for (const toolDef of Object.values(tools)) {
     const tool = toolDef as Record<string, unknown>;
     
