@@ -14,6 +14,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 # or
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_RESOURCE_NAME=your-resource
+# or use full URL instead of resource name:
+# AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com
 # or
 GOOGLE_API_KEY=...
 
@@ -35,5 +37,5 @@ npx testinator ./specs --base-url https://your-app.com
 |----------|-------------------|
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
-| `azure` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_RESOURCE_NAME` |
+| `azure` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_RESOURCE_NAME` (or `AZURE_OPENAI_BASE_URL`) |
 | `google` | `GOOGLE_API_KEY` |
