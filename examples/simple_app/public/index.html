@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple TODO App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .container { max-width: 500px; margin: 0 auto; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; color: #333; }
+    
+    /* Login Form */
+    #login-section, #todo-section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    #login-section { margin-top: 50px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+    button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .error { color: red; margin-top: 10px; }
+    
+    /* Todo Section */
+    #todo-section { display: none; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .user-info { color: #666; }
+    #logout-btn { background: #dc3545; }
+    #logout-btn:hover { background: #c82333; }
+    
+    /* Todo Form */
+    .todo-form { display: flex; gap: 10px; margin-bottom: 20px; }
+    #todo-input { flex: 1; }
+    
+    /* Todo List */
+    .todo-list { list-style: none; }
+    .todo-item { display: flex; align-items: center; padding: 10px; background: #f9f9f9; margin-bottom: 8px; border-radius: 4px; }
+    .todo-item.completed span { text-decoration: line-through; color: #999; }
+    .todo-item input[type="checkbox"] { margin-right: 10px; }
+    .todo-item span { flex: 1; }
+    .todo-item .delete-btn { background: #dc3545; padding: 5px 10px; font-size: 12px; }
+    
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📝 TODO App</h1>
+
+    <!-- Login Section -->
+    <div id="login-section">
+      <h2>Login</h2>
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter username">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter password">
+      </div>
+      <button id="login-btn">Login</button>
+      <div id="login-error" class="error"></div>
+    </div>
+
+    <!-- Todo Section -->
+    <div id="todo-section">
+      <div class="header">
+        <span class="user-info">Welcome, <strong id="username-display"></strong></span>
+        <button id="logout-btn">Logout</button>
+      </div>
+
+      <div class="todo-form">
+        <input type="text" id="todo-input" placeholder="Enter a new todo...">
+        <button id="add-todo-btn">Add</button>
+      </div>
+
+      <ul id="todo-list" class="todo-list"></ul>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem('token');
+    let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+
+    const loginSection = document.getElementById('login-section');
+    const todoSection = document.getElementById('todo-section');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const loginBtn = document.getElementById('login-btn');
+    const loginError = document.getElementById('login-error');
+    const logoutBtn = document.getElementById('logout-btn');
+    const usernameDisplay = document.getElementById('username-display');
+    const todoInput = document.getElementById('todo-input');
+    const addTodoBtn = document.getElementById('add-todo-btn');
+    const todoList = document.getElementById('todo-list');
+
+    // Check if already logged in
+    if (token && currentUser) {
+      showTodoSection();
+    }
+
+    // Login
+    loginBtn.addEventListener('click', async () => {
+      const username = usernameInput.value;
+      const password = passwordInput.value;
+      loginError.textContent = '';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          loginError.textContent = data.error;
+          return;
+        }
+
+        token = data.token;
+        currentUser = data.user;
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(currentUser));
+        showTodoSection();
+      } catch (err) {
+        loginError.textContent = 'Failed to connect to server';
+      }
+    });
+
+    // Logout
+    logoutBtn.addEventListener('click', () => {
+      token = null;
+      currentUser = null;
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      usernameInput.value = '';
+      passwordInput.value = '';
+      loginSection.style.display = 'block';
+      todoSection.style.display = 'none';
+    });
+
+    // Add Todo
+    addTodoBtn.addEventListener('click', addTodo);
+    todoInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addTodo();
+    });
+
+    async function addTodo() {
+      const title = todoInput.value.trim();
+      if (!title) return;
+
+      try {
+        const res = await fetch('/api/todos', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ title })
+        });
+
+        if (res.ok) {
+          todoInput.value = '';
+          loadTodos();
+        }
+      } catch (err) {
+        console.error('Failed to add todo');
+      }
+    }
+
+    // Load Todos
+    async function loadTodos() {
+      try {
+        const res = await fetch('/api/todos', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          const todos = await res.json();
+          renderTodos(todos);
+        }
+      } catch (err) {
+        console.error('Failed to load todos');
+      }
+    }
+
+    // Render Todos
+    function renderTodos(todos) {
+      todoList.innerHTML = '';
+      todos.forEach(todo => {
+        const li = document.createElement('li');
+        li.className = 'todo-item' + (todo.completed ? ' completed' : '');
+        li.innerHTML = `
+          <input type="checkbox" ${todo.completed ? 'checked' : ''} onchange="toggleTodo(${todo.id}, this.checked)">
+          <span>${escapeHtml(todo.title)}</span>
+          <button class="delete-btn" onclick="deleteTodo(${todo.id})">Delete</button>
+        `;
+        todoList.appendChild(li);
+      });
+    }
+
+    // Toggle Todo
+    async function toggleTodo(id, completed) {
+      try {
+        await fetch(`/api/todos/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ completed })
+        });
+        loadTodos();
+      } catch (err) {
+        console.error('Failed to update todo');
+      }
+    }
+    window.toggleTodo = toggleTodo;
+
+    // Delete Todo
+    async function deleteTodo(id) {
+      try {
+        await fetch(`/api/todos/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadTodos();
+      } catch (err) {
+        console.error('Failed to delete todo');
+      }
+    }
+    window.deleteTodo = deleteTodo;
+
+    function showTodoSection() {
+      loginSection.style.display = 'none';
+      todoSection.style.display = 'block';
+      usernameDisplay.textContent = currentUser.username;
+      loadTodos();
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Testinator Report</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --pass: #3fb950;
+      --fail: #f85149;
+      --accent: #58a6ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--accent), #a371f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .meta { color: var(--text-muted); font-size: 0.875rem; }
+    .meta span { margin: 0 0.5rem; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .stat-label { color: var(--text-muted); font-size: 0.875rem; }
+    .stat-pass .stat-value { color: var(--pass); }
+    .stat-fail .stat-value { color: var(--fail); }
+    .results { display: flex; flex-direction: column; gap: 1rem; }
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .status-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-pass { background: rgba(63, 185, 80, 0.2); color: var(--pass); }
+    .status-fail { background: rgba(248, 81, 73, 0.2); color: var(--fail); }
+    .spec-name { font-weight: 500; flex: 1; }
+    .duration { color: var(--text-muted); font-size: 0.875rem; }
+    .result-details {
+      padding: 1rem 1.25rem;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+    .tooling-error {
+      background: rgba(248, 81, 73, 0.15);
+      border: 1px solid var(--fail);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+      color: var(--fail);
+      font-weight: 500;
+    }
+    .criteria-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .criteria-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.25rem 0;
+    }
+    .criteria-icon {
+      flex-shrink: 0;
+      width: 1rem;
+      text-align: center;
+    }
+    .criteria-icon.pass { color: var(--pass); }
+    .criteria-icon.fail { color: var(--fail); }
+    .criteria-name { color: var(--text); }
+    .criteria-reason { color: var(--text-muted); }
+    .fallback-details {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .screenshot-container {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .screenshot-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .screenshot-btn:hover {
+      background: #1f2937;
+      border-color: var(--text-muted);
+    }
+    /* Modal styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.8);
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .modal.show {
+      display: flex;
+    }
+    .modal-content {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow: auto;
+      position: relative;
+      padding: 1rem;
+    }
+    .modal-img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 2rem;
+      height: 2rem;
+      font-size: 1.25rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover {
+      background: rgba(0,0,0,0.8);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Testinator Report</h1>
+      <p class="meta">
+        <span>Provider: azure</span>
+        <span>|</span>
+        <span>Model: gpt-5.1</span>
+        <span>|</span>
+        <span>12/17/2025, 09:02 PM</span>
+      </p>
+    </header>
+    
+    <div class="summary">
+      <div class="stat">
+        <div class="stat-value">2</div>
+        <div class="stat-label">Total Tests</div>
+      </div>
+      <div class="stat stat-pass">
+        <div class="stat-value">2</div>
+        <div class="stat-label">Passed</div>
+      </div>
+      <div class="stat stat-fail">
+        <div class="stat-value">0</div>
+        <div class="stat-label">Failed</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">19.6s</div>
+        <div class="stat-label">Duration</div>
+      </div>
+    </div>
+    
+    <div class="results">
+      
+      <div class="result-card">
+        <div class="result-header">
+          <span class="status-badge status-pass">Pass</span>
+          <span class="spec-name">homepage-smoke.md</span>
+          <span class="duration">14.58s</span>
+        </div>
+        <div class="result-details">
+          
+          <ul class="criteria-list"><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Navigate to homepage:</span> <span class="criteria-reason">Loaded Google Maps homepage after cookie consent</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">HTTP 200 status:</span> <span class="criteria-reason">Primary maps resources returned 200 responses</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Visible title or heading:</span> <span class="criteria-reason">Heading &quot;Dieses Gebiet&quot; present and visible</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">No JS console errors:</span> <span class="criteria-reason">Console messages list returned empty error output</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Loads within 10 seconds:</span> <span class="criteria-reason">Homepage interactive well under 10 seconds</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Meaningful non-blank content:</span> <span class="criteria-reason">Map, search box, and POI buttons visible</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Basic navigation elements visible:</span> <span class="criteria-reason">Search, menu, zoom, layers, and location buttons visible</span></li></ul>
+          <div class="screenshot-container">
+          <button onclick="showScreenshot('images/homepage-smoke.jpg')" class="screenshot-btn">📷 Show Final Screenshot</button>
+        </div>
+        </div>
+      </div>
+      <div class="result-card">
+        <div class="result-header">
+          <span class="status-badge status-pass">Pass</span>
+          <span class="spec-name">navigate_sg.md</span>
+          <span class="duration">17.61s</span>
+        </div>
+        <div class="result-details">
+          
+          <ul class="criteria-list"><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Website opens:</span> <span class="criteria-reason">Navigated to Google Maps successfully</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Search St.Gallen:</span> <span class="criteria-reason">Search results show place St. Gallen</span></li><li><span class="criteria-icon pass">✓</span><span class="criteria-name">Quick fact text matches:</span> <span class="criteria-reason">Kurzinfo matches required description in German</span></li></ul>
+          <div class="screenshot-container">
+          <button onclick="showScreenshot('images/navigate_sg.jpg')" class="screenshot-btn">📷 Show Final Screenshot</button>
+        </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="screenshotModal" class="modal" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <img id="modalImage" class="modal-img" src="" alt="Screenshot" />
+    </div>
+  </div>
+
+  <script>
+    function showScreenshot(path) {
+      const modal = document.getElementById('screenshotModal');
+      const img = document.getElementById('modalImage');
+      img.src = path;
+      modal.classList.add('show');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('screenshotModal');
+      modal.classList.remove('show');
+      const img = document.getElementById('modalImage');
+      img.src = '';
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeModal();
+      }
+    });
+  </script>
+</body>
+</html>

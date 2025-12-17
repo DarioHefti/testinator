@@ -1,6 +1,6 @@
 import { experimental_createMCPClient as createMCPClient } from 'ai';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from 'ai/mcp-stdio';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,10 +33,16 @@ export class MCPPool {
   private inUse: Set<number> = new Set();
   private baseDir: string;
   private headless: boolean;
+  private storageStatePath: string | undefined;
   private initialized = false;
 
-  constructor(headless: boolean = true) {
+  /**
+   * @param headless - Run browsers in headless mode
+   * @param storageStatePath - Path to storage state JSON for authenticated sessions
+   */
+  constructor(headless: boolean = true, storageStatePath?: string) {
     this.headless = headless;
+    this.storageStatePath = storageStatePath;
     this.baseDir = join(tmpdir(), `testinator-${Date.now()}`);
   }
 
@@ -47,6 +53,9 @@ export class MCPPool {
     if (this.initialized) return;
 
     console.log(`  [MCPPool] Creating ${size} isolated browser instance(s)...`);
+    if (this.storageStatePath) {
+      console.log(`  [MCPPool] Using authenticated session from: ${this.storageStatePath}`);
+    }
 
     // Ensure browsers are available
     const browserManager = BrowserManager.getInstance();
@@ -70,15 +79,16 @@ export class MCPPool {
 
   /**
    * Create a single isolated MCP client.
-   * Each client uses a unique user-data-dir for browser isolation (works on all platforms).
+   * Uses isolated mode (in-memory profile) to guarantee no lock conflicts between parallel workers.
+   * Storage state is passed via config file when authentication is needed.
    */
   private async createClient(id: number, chromiumPath: string | null): Promise<PooledClient> {
     const userDataDir = join(this.baseDir, `agent-${id}`);
     mkdirSync(userDataDir, { recursive: true });
 
-    // Build MCP args - each instance gets its own user-data-dir for isolation
+    // Build MCP args
     const mcpCliPath = getMcpCliPath();
-    const mcpArgs = [mcpCliPath, '--user-data-dir', userDataDir];
+    const mcpArgs = [mcpCliPath];
     
     if (this.headless) {
       mcpArgs.push('--headless');
@@ -86,6 +96,23 @@ export class MCPPool {
     if (chromiumPath) {
       mcpArgs.push('--executable-path', chromiumPath);
     }
+    
+    // Always use config file with isolated: true for in-memory profiles (no disk locks!)
+    // This guarantees parallel workers don't conflict
+    const storageState = this.storageStatePath 
+      ? JSON.parse(readFileSync(this.storageStatePath, 'utf-8')) 
+      : undefined;
+    
+    const config = {
+      browser: {
+        isolated: true, // Keep profile in memory, no disk persistence
+        ...(storageState ? { contextOptions: { storageState } } : {}),
+      },
+    };
+    
+    const configPath = join(userDataDir, 'mcp-config.json');
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mcpArgs.push('--config', configPath);
 
     const transport = new StdioMCPTransport({
       command: process.execPath, // Use current Node.js executable

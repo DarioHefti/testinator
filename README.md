@@ -41,6 +41,22 @@ Each run writes a fresh report folder inside your spec folder:
 
 - `./specs/reports/index.html` (summary report)
 - `./specs/reports/images/*.jpg` (final-state screenshots, one per spec)
+- `./specs/reports/images/auth_login.jpg` (auth page screenshot, if using authentication)
+
+### Authentication
+
+If your app requires login, add an `AUTH_LOGIN.md` file to the root of your specs folder. The agent will run this spec first, capture the session, and use it for all subsequent tests.
+
+Example `AUTH_LOGIN.md`:
+```markdown
+Go to the mainpage
+Login as user
+
+username:admin
+password:admin123
+
+You should see the main application with a logout button.
+```
 
 ### Options
 

@@ -45,6 +45,42 @@ export interface RunSummary {
   allPassed: boolean;
   totalDurationMs: number;
   timestamp: string;
+  /** Hierarchical folder tree for report display */
+  folderTree?: FolderNode;
+  /** Authentication result if AUTH_LOGIN.md was used */
+  authResult?: {
+    success: boolean;
+    durationMs: number;
+    error?: string;
+    /** Relative path to the auth screenshot (from reports folder) */
+    screenshotPath?: string;
+  };
+}
+
+/**
+ * Represents a folder in the spec tree structure
+ */
+export interface FolderNode {
+  /** Folder name (or 'root' for the top level) */
+  name: string;
+  /** Relative path from specs root */
+  relativePath: string;
+  /** Child folders */
+  children: FolderNode[];
+  /** Test results in this folder (not in subfolders) */
+  specs: TestResult[];
+  /** Summary stats for this folder and all descendants */
+  summary: FolderSummary;
+}
+
+/**
+ * Summary statistics for a folder
+ */
+export interface FolderSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  durationMs: number;
 }
 
 /**
