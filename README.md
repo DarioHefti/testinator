@@ -1,6 +1,6 @@
 # Testinator
 
-AI-powered E2E testing agent using Playwright MCP.
+Spec Driven E2E Testing via AI Agent steering playwright
 
 ## Setup
 
@@ -13,9 +13,7 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 # or
 AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_RESOURCE_NAME=your-resource
-# or use full URL instead of resource name:
-# AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com
+AZURE_OPENAI_RESOURCE_NAME=your-resource-name-or-full-url
 # or
 GOOGLE_API_KEY=...
 
@@ -33,9 +31,15 @@ npm run build
 npx testinator ./specs --base-url https://your-app.com
 ```
 
+### Options
+
+- `--provider <provider>` - LLM provider: openai, anthropic, azure, google (default: openai)
+- `--model <model>` - Model name (defaults to provider's recommended model)
+- `--headed` - Run browser in headed mode (visible browser window)
+
 | Provider | Required Env Vars |
 |----------|-------------------|
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
-| `azure` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_RESOURCE_NAME` (or `AZURE_OPENAI_BASE_URL`) |
+| `azure` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_RESOURCE_NAME` |
 | `google` | `GOOGLE_API_KEY` |

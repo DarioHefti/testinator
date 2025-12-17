@@ -11,7 +11,8 @@ export class Main {
     folderPath: string,
     baseUrl: string,
     provider: LLMProvider = 'openai',
-    model?: string
+    model?: string,
+    headless: boolean = true
   ): Promise<RunSummary> {
     const startTime = Date.now();
     const results: TestResult[] = [];
@@ -37,7 +38,7 @@ export class Main {
 
       try {
         const markdown = readFileSync(filePath, 'utf-8');
-        const agentResult = await runSpec(markdown, baseUrl, specName, provider, model);
+        const agentResult = await runSpec(markdown, baseUrl, specName, provider, model, headless);
 
         const result: TestResult = {
           specName,

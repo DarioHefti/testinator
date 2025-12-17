@@ -26,18 +26,16 @@ export function getLanguageModel(provider: LLMProvider, model?: string): Languag
       return anthropic(modelName);
     }
     case 'azure': {
-      const resourceOrUrl = process.env.AZURE_OPENAI_BASE_URL || process.env.AZURE_OPENAI_RESOURCE_NAME || '';
+      const resourceValue = process.env.AZURE_OPENAI_RESOURCE_NAME || '';
       
       // Extract resource name from full URL if provided (e.g., https://my-resource.openai.azure.com -> my-resource)
       let resourceName: string;
-      if (resourceOrUrl.includes('.openai.azure.com') || resourceOrUrl.includes('.cognitiveservices.azure.com')) {
-        const match = resourceOrUrl.match(/https?:\/\/([^.]+)\./);
-        resourceName = match ? match[1] : resourceOrUrl;
+      if (resourceValue.includes('.openai.azure.com') || resourceValue.includes('.cognitiveservices.azure.com')) {
+        const match = resourceValue.match(/https?:\/\/([^.]+)\./);
+        resourceName = match ? match[1] : resourceValue;
       } else {
-        resourceName = resourceOrUrl;
+        resourceName = resourceValue;
       }
-      
-      console.log(`    [Azure] Using resource: ${resourceName}, deployment: ${modelName}`);
       
       const azure = createAzure({
         apiKey: process.env.AZURE_OPENAI_API_KEY,

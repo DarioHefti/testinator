@@ -34,22 +34,31 @@ export async function runSpec(
   baseUrl: string,
   specName: string,
   provider: LLMProvider = 'openai',
-  model?: string
+  model?: string,
+  headless: boolean = true
 ): Promise<AgentResult> {
   // Ensure Playwright browsers are available
+  // For headed mode, we need Playwright's bundled browser (better Wayland support)
   const browserManager = BrowserManager.getInstance();
-  await browserManager.ensureBrowsers();
+  await browserManager.ensureBrowsers(!headless);
 
   // Create MCP transport for Playwright
   // On Windows, we need to spawn via cmd.exe to properly resolve npx
   const isWindows = process.platform === 'win32';
   
-  // Build MCP args - include --executable-path if we found a system browser
-  const chromiumPath = browserManager.getChromiumPath();
-  const mcpArgs = ['@playwright/mcp@latest', '--headless'];
+  // Build MCP args
+  // Only use system browser for headless mode - Playwright's bundled browser
+  // handles headed mode better (especially on Wayland/Linux)
+  const chromiumPath = headless ? browserManager.getChromiumPath() : null;
+  const mcpArgs = ['@playwright/mcp@latest'];
+  if (headless) {
+    mcpArgs.push('--headless');
+  }
   if (chromiumPath) {
     mcpArgs.push('--executable-path', chromiumPath);
   }
+
+  console.log(`  [Playwright] Mode: ${headless ? 'headless' : 'headed'}`);
   
   const transport = new StdioMCPTransport({
     command: isWindows ? 'cmd.exe' : 'npx',
@@ -85,20 +94,8 @@ export async function runSpec(
       report_result: reportResultTool,
     };
     
-    // Debug: Log tool structure to understand format
+    // Azure OpenAI has stricter schema requirements - normalize tools
     if (provider === 'azure') {
-      const sampleTool = Object.entries(mcpTools)[0];
-      if (sampleTool) {
-        console.log(`    [Debug] Sample MCP tool "${sampleTool[0]}" structure:`, 
-          JSON.stringify(sampleTool[1], (key, value) => {
-            // Skip functions and complex objects for logging
-            if (typeof value === 'function') return '[Function]';
-            if (key === 'execute') return '[Function]';
-            return value;
-          }, 2).slice(0, 500));
-      }
-      
-      // Azure OpenAI has stricter schema requirements - normalize tools
       allTools = normalizeToolsForAzure(allTools);
     }
 

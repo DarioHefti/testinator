@@ -74,7 +74,7 @@ Validation performed by the CLI:
 - Provider-required environment variables are present:
   - `openai`: `OPENAI_API_KEY`
   - `anthropic`: `ANTHROPIC_API_KEY`
-  - `azure`: `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_RESOURCE_NAME` (or base URL, see agent)
+  - `azure`: `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_RESOURCE_NAME`
   - `google`: `GOOGLE_API_KEY`
 
 If any required input is missing, it prints usage and exits non-zero.

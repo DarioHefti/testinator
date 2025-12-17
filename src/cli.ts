@@ -11,6 +11,7 @@ interface CliArgs {
   baseUrl: string;
   provider: LLMProvider;
   model?: string;
+  headless: boolean;
 }
 
 const VALID_PROVIDERS = ['openai', 'anthropic', 'azure', 'google'] as const;
@@ -28,6 +29,7 @@ Required:
 Options:
   --provider <provider>   LLM provider: openai, anthropic, azure, google (default: openai)
   --model <model>         Model name (defaults to provider's recommended model)
+  --headed                Run browser in headed mode (visible browser window)
   --help, -h              Show this help message
 
 Environment Variables:
@@ -50,6 +52,7 @@ Examples:
   testinator ./specs --base-url https://example.com
   testinator ./specs --base-url https://example.com --provider anthropic
   testinator ./specs --base-url https://example.com --provider openai --model gpt-4-turbo
+  testinator ./specs --base-url https://example.com --headed
 `);
 }
 
@@ -67,6 +70,7 @@ function parseArgs(argv: string[]): CliArgs | null {
   // Start with env var defaults, CLI args will override
   let provider: LLMProvider = 'openai';
   let model: string | undefined = process.env.TESTINATOR_MODEL;
+  let headless = true;
 
   // Check TESTINATOR_PROVIDER env var
   const envProvider = process.env.TESTINATOR_PROVIDER;
@@ -92,6 +96,8 @@ function parseArgs(argv: string[]): CliArgs | null {
       provider = p as LLMProvider;
     } else if (arg === '--model') {
       model = args[++i];
+    } else if (arg === '--headed') {
+      headless = false;
     } else if (!arg.startsWith('-')) {
       specFolder = arg;
     }
@@ -143,6 +149,7 @@ function parseArgs(argv: string[]): CliArgs | null {
     baseUrl,
     provider,
     model,
+    headless,
   };
 }
 
@@ -181,11 +188,12 @@ async function main(): Promise<void> {
   console.log(`   Spec folder: ${args.specFolder}`);
   console.log(`   Base URL: ${args.baseUrl}`);
   console.log(`   Provider: ${args.provider}`);
-  console.log(`   Model: ${modelDisplay}\n`);
+  console.log(`   Model: ${modelDisplay}`);
+  console.log(`   Browser: ${args.headless ? 'headless' : 'headed'}\n`);
 
   try {
     const runner = new Main();
-    const summary = await runner.run(args.specFolder, args.baseUrl, args.provider, args.model);
+    const summary = await runner.run(args.specFolder, args.baseUrl, args.provider, args.model, args.headless);
 
     // Print summary to console
     console.log(`\n${'='.repeat(60)}`);

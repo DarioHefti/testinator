@@ -119,24 +119,30 @@ export class BrowserManager {
    * Ensure Playwright browsers are available.
    * First tries to find system Chromium, then falls back to installing Playwright's bundled browser.
    * Works across Windows, macOS, and Linux.
+   * @param forcePlaywrightBrowser - If true, always install Playwright's browser (for headed mode)
    */
-  async ensureBrowsers(): Promise<void> {
-    if (this.browsersEnsured) {
+  async ensureBrowsers(forcePlaywrightBrowser: boolean = false): Promise<void> {
+    if (this.browsersEnsured && !forcePlaywrightBrowser) {
       return;
     }
 
-    // First, check for system Chromium
+    // First, check for system Chromium (only for headless mode)
     console.log('  [Playwright] Checking for browser...');
-    this.chromiumPath = this.findSystemChromium();
     
-    if (this.chromiumPath) {
-      console.log(`  [Playwright] Found system browser: ${this.chromiumPath}`);
-      this.browsersEnsured = true;
-      return;
+    if (!forcePlaywrightBrowser) {
+      this.chromiumPath = this.findSystemChromium();
+      
+      if (this.chromiumPath) {
+        console.log(`  [Playwright] Found system browser: ${this.chromiumPath}`);
+        this.browsersEnsured = true;
+        return;
+      }
+    } else {
+      console.log('  [Playwright] Headed mode - using Playwright bundled browser');
     }
     
-    // No system browser found, install Playwright's bundled one
-    console.log('  [Playwright] No system browser found, installing Chromium...');
+    // Install Playwright's bundled browser
+    console.log('  [Playwright] Installing/checking Playwright Chromium...');
     
     const isWindows = process.platform === 'win32';
     

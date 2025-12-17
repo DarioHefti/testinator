@@ -44,6 +44,7 @@ export interface AgentConfig {
   specName: string;
   provider: LLMProvider;
   model: string;
+  headless: boolean;
 }
 
 /**
