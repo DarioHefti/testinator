@@ -27,7 +27,12 @@ export function buildSystemPrompt(baseUrl: string, specName: string): string {
 ## Output
 When you have completed all checks, call the 'report_result' tool with:
 - success: true if ALL requirements in the spec are met, false otherwise
-- details: A clear summary of what was checked and any failures encountered
+- isToolingError: true ONLY if failure is due to infrastructure issues (browser crash, network error, timeout, element not found due to page not loading). False for actual test failures.
+- toolingErrorMessage: Brief error description if isToolingError is true, otherwise empty string ""
+- criteria: Array of results for each acceptance criterion:
+  - criterion: Short name (e.g., "Page loads", "Login works")
+  - passed: true/false
+  - reason: MAX 10 words explaining why (e.g., "Homepage displayed correctly", "Button not clickable")
 
-Be precise and factual in your details. Include specific element names, URLs visited, and exact error messages when tests fail.`;
+Keep reasons concise. No fluff.`;
 }

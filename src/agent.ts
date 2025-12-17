@@ -163,12 +163,16 @@ export async function runSpecWithClient(
     const success = lowerText.includes('pass') && !lowerText.includes('fail');
     return {
       success,
-      details: result.text,
+      isToolingError: false,
+      toolingErrorMessage: '',
+      criteria: [{ criterion: 'Test execution', passed: success, reason: success ? 'Completed' : 'See details' }],
     };
   }
 
   return {
     success: false,
-    details: 'Agent did not produce a test result',
+    isToolingError: true,
+    toolingErrorMessage: 'Agent did not produce a test result',
+    criteria: [],
   };
 }

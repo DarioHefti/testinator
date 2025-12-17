@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import type { RunSummary, TestResult, LLMProvider } from './types.js';
+import type { RunSummary, TestResult, LLMProvider, AgentResult } from './types.js';
 import { runSpec, runSpecWithClient, checkLLMConnection } from './agent.js';
 import { MCPPool } from './mcp-pool.js';
 
@@ -79,8 +79,11 @@ export class Main {
         specName,
         specPath: filePath,
         success: agentResult.success,
-        details: agentResult.details,
+        details: this.buildDetailsString(agentResult),
         durationMs: Date.now() - specStartTime,
+        isToolingError: agentResult.isToolingError,
+        toolingErrorMessage: agentResult.toolingErrorMessage,
+        criteria: agentResult.criteria,
       };
 
       const status = result.success ? '✓ PASS' : '✗ FAIL';
@@ -188,8 +191,11 @@ export class Main {
         specName,
         specPath: filePath,
         success: agentResult.success,
-        details: agentResult.details,
+        details: this.buildDetailsString(agentResult),
         durationMs: Date.now() - specStartTime,
+        isToolingError: agentResult.isToolingError,
+        toolingErrorMessage: agentResult.toolingErrorMessage,
+        criteria: agentResult.criteria,
       };
 
       const status = result.success ? '✓ PASS' : '✗ FAIL';
@@ -338,6 +344,37 @@ export class Main {
       padding: 1rem 1.25rem;
       color: var(--text-muted);
       font-size: 0.875rem;
+    }
+    .tooling-error {
+      background: rgba(248, 81, 73, 0.15);
+      border: 1px solid var(--fail);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+      color: var(--fail);
+      font-weight: 500;
+    }
+    .criteria-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .criteria-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.25rem 0;
+    }
+    .criteria-icon {
+      flex-shrink: 0;
+      width: 1rem;
+      text-align: center;
+    }
+    .criteria-icon.pass { color: var(--pass); }
+    .criteria-icon.fail { color: var(--fail); }
+    .criteria-name { color: var(--text); }
+    .criteria-reason { color: var(--text-muted); }
+    .fallback-details {
       white-space: pre-wrap;
       word-break: break-word;
     }
@@ -376,19 +413,7 @@ export class Main {
     </div>
     
     <div class="results">
-      ${summary.results
-        .map(
-          (r) => `
-      <div class="result-card">
-        <div class="result-header">
-          <span class="status-badge ${r.success ? 'status-pass' : 'status-fail'}">${r.success ? 'Pass' : 'Fail'}</span>
-          <span class="spec-name">${this.escapeHtml(r.specName)}</span>
-          <span class="duration">${(r.durationMs / 1000).toFixed(2)}s</span>
-        </div>
-        <div class="result-details">${this.escapeHtml(r.details)}</div>
-      </div>`
-        )
-        .join('')}
+      ${summary.results.map((r) => this.renderResultCard(r)).join('')}
     </div>
   </div>
 </body>
@@ -397,6 +422,41 @@ export class Main {
     const reportPath = join(folderPath, 'index.html');
     writeFileSync(reportPath, html, 'utf-8');
     console.log(`HTML report written to: ${reportPath}`);
+  }
+
+  /**
+   * Render a single result card for the HTML report
+   */
+  private renderResultCard(r: TestResult): string {
+    const hasToolingError = r.isToolingError && r.toolingErrorMessage && r.toolingErrorMessage.length > 0;
+    const toolingErrorHtml = hasToolingError
+      ? `<div class="tooling-error">⚠ Tooling Error: ${this.escapeHtml(r.toolingErrorMessage!)}</div>`
+      : '';
+
+    let detailsContent: string;
+    if (r.criteria && r.criteria.length > 0) {
+      const criteriaItems = r.criteria.map((c) => {
+        const iconClass = c.passed ? 'pass' : 'fail';
+        const icon = c.passed ? '✓' : '✗';
+        return `<li><span class="criteria-icon ${iconClass}">${icon}</span><span class="criteria-name">${this.escapeHtml(c.criterion)}:</span> <span class="criteria-reason">${this.escapeHtml(c.reason)}</span></li>`;
+      }).join('');
+      detailsContent = `<ul class="criteria-list">${criteriaItems}</ul>`;
+    } else {
+      detailsContent = `<div class="fallback-details">${this.escapeHtml(r.details)}</div>`;
+    }
+
+    return `
+      <div class="result-card">
+        <div class="result-header">
+          <span class="status-badge ${r.success ? 'status-pass' : 'status-fail'}">${r.success ? 'Pass' : 'Fail'}</span>
+          <span class="spec-name">${this.escapeHtml(r.specName)}</span>
+          <span class="duration">${(r.durationMs / 1000).toFixed(2)}s</span>
+        </div>
+        <div class="result-details">
+          ${toolingErrorHtml}
+          ${detailsContent}
+        </div>
+      </div>`;
   }
 
   /**
@@ -409,5 +469,20 @@ export class Main {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  /**
+   * Build a fallback details string from structured AgentResult
+   */
+  private buildDetailsString(result: AgentResult): string {
+    const lines: string[] = [];
+    if (result.isToolingError && result.toolingErrorMessage.length > 0) {
+      lines.push(`Tooling Error: ${result.toolingErrorMessage}`);
+    }
+    for (const c of result.criteria) {
+      const icon = c.passed ? '✓' : '✗';
+      lines.push(`${icon} ${c.criterion}: ${c.reason}`);
+    }
+    return lines.join('\n');
   }
 }
