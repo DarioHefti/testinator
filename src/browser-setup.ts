@@ -9,7 +9,8 @@ import { existsSync } from 'fs';
 export class BrowserManager {
   private static instance: BrowserManager | null = null;
   
-  private browsersEnsured = false;
+  private headlessEnsured = false;
+  private headedEnsured = false;
   private chromiumPath: string | null = null;
 
   private constructor() {
@@ -122,19 +123,28 @@ export class BrowserManager {
    * @param forcePlaywrightBrowser - If true, always install Playwright's browser (for headed mode)
    */
   async ensureBrowsers(forcePlaywrightBrowser: boolean = false): Promise<void> {
-    if (this.browsersEnsured && !forcePlaywrightBrowser) {
-      return;
+    // Track headless and headed modes separately since they need different browser configs
+    if (forcePlaywrightBrowser) {
+      // Headed mode - needs Playwright's bundled browser
+      if (this.headedEnsured) {
+        return;
+      }
+    } else {
+      // Headless mode - can use system browser
+      if (this.headlessEnsured) {
+        return;
+      }
     }
 
-    // First, check for system Chromium (only for headless mode)
     console.log('  [Playwright] Checking for browser...');
     
     if (!forcePlaywrightBrowser) {
+      // Headless mode: try system browser first
       this.chromiumPath = this.findSystemChromium();
       
       if (this.chromiumPath) {
         console.log(`  [Playwright] Found system browser: ${this.chromiumPath}`);
-        this.browsersEnsured = true;
+        this.headlessEnsured = true;
         return;
       }
     } else {
@@ -171,7 +181,11 @@ export class BrowserManager {
 
       proc.on('close', (code) => {
         if (code === 0) {
-          this.browsersEnsured = true;
+          if (forcePlaywrightBrowser) {
+            this.headedEnsured = true;
+          } else {
+            this.headlessEnsured = true;
+          }
           if (stdout.includes('Downloading') || stdout.includes('Installing')) {
             console.log('  [Playwright] Browser installed successfully');
           } else {
@@ -183,14 +197,23 @@ export class BrowserManager {
           if (stderr) {
             console.warn(`  [Playwright] ${stderr.slice(0, 200)}`);
           }
-          this.browsersEnsured = true;
+          // Still mark as ensured to avoid repeated failed attempts
+          if (forcePlaywrightBrowser) {
+            this.headedEnsured = true;
+          } else {
+            this.headlessEnsured = true;
+          }
           resolve();
         }
       });
 
       proc.on('error', (err) => {
         console.warn(`  [Playwright] Could not run browser install: ${err.message}`);
-        this.browsersEnsured = true;
+        if (forcePlaywrightBrowser) {
+          this.headedEnsured = true;
+        } else {
+          this.headlessEnsured = true;
+        }
         resolve();
       });
     });

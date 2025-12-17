@@ -31,6 +31,8 @@
     "@ai-sdk/anthropic": "^1.1.0",
     "@ai-sdk/azure": "^1.1.0",
     "@ai-sdk/google": "^1.1.0",
+    "@playwright/mcp": "^0.0.19",
+    "playwright": "^1.52.0",
     "dotenv": "^16.4.7",
     "zod": "^3.24.0"
   },

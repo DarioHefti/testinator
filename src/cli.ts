@@ -2,6 +2,7 @@
 
 import 'dotenv/config';
 import { existsSync, statSync } from 'node:fs';
+import { cpus } from 'node:os';
 import { resolve } from 'node:path';
 import { Main } from './main.js';
 import { type LLMProvider, DEFAULT_MODELS } from './types.js';
@@ -12,6 +13,7 @@ interface CliArgs {
   provider: LLMProvider;
   model?: string;
   headless: boolean;
+  concurrency: number;
 }
 
 const VALID_PROVIDERS = ['openai', 'anthropic', 'azure', 'google'] as const;
@@ -30,6 +32,7 @@ Options:
   --provider <provider>   LLM provider: openai, anthropic, azure, google (default: openai)
   --model <model>         Model name (defaults to provider's recommended model)
   --headed                Run browser in headed mode (visible browser window)
+  --sequential            Run specs one at a time (default: parallel with CPU core count)
   --help, -h              Show this help message
 
 Environment Variables:
@@ -53,6 +56,7 @@ Examples:
   testinator ./specs --base-url https://example.com --provider anthropic
   testinator ./specs --base-url https://example.com --provider openai --model gpt-4-turbo
   testinator ./specs --base-url https://example.com --headed
+  testinator ./specs --base-url https://example.com --sequential
 `);
 }
 
@@ -71,6 +75,7 @@ function parseArgs(argv: string[]): CliArgs | null {
   let provider: LLMProvider = 'openai';
   let model: string | undefined = process.env.TESTINATOR_MODEL;
   let headless = true;
+  let concurrency = cpus().length;
 
   // Check TESTINATOR_PROVIDER env var
   const envProvider = process.env.TESTINATOR_PROVIDER;
@@ -98,6 +103,8 @@ function parseArgs(argv: string[]): CliArgs | null {
       model = args[++i];
     } else if (arg === '--headed') {
       headless = false;
+    } else if (arg === '--sequential') {
+      concurrency = 1;
     } else if (!arg.startsWith('-')) {
       specFolder = arg;
     }
@@ -150,6 +157,7 @@ function parseArgs(argv: string[]): CliArgs | null {
     provider,
     model,
     headless,
+    concurrency,
   };
 }
 
@@ -189,11 +197,12 @@ async function main(): Promise<void> {
   console.log(`   Base URL: ${args.baseUrl}`);
   console.log(`   Provider: ${args.provider}`);
   console.log(`   Model: ${modelDisplay}`);
-  console.log(`   Browser: ${args.headless ? 'headless' : 'headed'}\n`);
+  console.log(`   Browser: ${args.headless ? 'headless' : 'headed'}`);
+  console.log(`   Concurrency: ${args.concurrency === 1 ? 'sequential' : args.concurrency}\n`);
 
   try {
     const runner = new Main();
-    const summary = await runner.run(args.specFolder, args.baseUrl, args.provider, args.model, args.headless);
+    const summary = await runner.run(args.specFolder, args.baseUrl, args.provider, args.model, args.headless, args.concurrency);
 
     // Print summary to console
     console.log(`\n${'='.repeat(60)}`);

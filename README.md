@@ -30,12 +30,17 @@ npm run build
 ```bash
 npx testinator ./specs --base-url https://your-app.com
 ```
+or
+```bash
+node dist/ ./specs --base-url https://your-app.com
+```
 
 ### Options
 
 - `--provider <provider>` - LLM provider: openai, anthropic, azure, google (default: openai)
 - `--model <model>` - Model name (defaults to provider's recommended model)
 - `--headed` - Run browser in headed mode (visible browser window)
+- `--sequential` - Run specs one at a time (default: parallel with CPU core count)
 
 | Provider | Required Env Vars |
 |----------|-------------------|

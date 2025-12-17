@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import type { RunSummary, TestResult, LLMProvider } from './types.js';
-import { runSpec, checkLLMConnection } from './agent.js';
+import { runSpec, runSpecWithClient, checkLLMConnection } from './agent.js';
+import { MCPPool } from './mcp-pool.js';
 
 export class Main {
   /**
@@ -12,7 +13,8 @@ export class Main {
     baseUrl: string,
     provider: LLMProvider = 'openai',
     model?: string,
-    headless: boolean = true
+    headless: boolean = true,
+    concurrency: number = 1
   ): Promise<RunSummary> {
     const startTime = Date.now();
     const results: TestResult[] = [];
@@ -29,50 +31,16 @@ export class Main {
 
     console.log(`Found ${mdFiles.length} spec file(s) to run\n`);
 
-    // Run each spec sequentially
-    for (const filePath of mdFiles) {
-      const specName = basename(filePath);
-      console.log(`Running: ${specName}...`);
-
-      const specStartTime = Date.now();
-
-      try {
-        const markdown = readFileSync(filePath, 'utf-8');
-        const agentResult = await runSpec(markdown, baseUrl, specName, provider, model, headless);
-
-        const result: TestResult = {
-          specName,
-          specPath: filePath,
-          success: agentResult.success,
-          details: agentResult.details,
-          durationMs: Date.now() - specStartTime,
-        };
-
+    if (concurrency === 1) {
+      // Run sequentially
+      for (const filePath of mdFiles) {
+        const result = await this.runSingleSpec(filePath, baseUrl, provider, model, headless);
         results.push(result);
-
-        const status = result.success ? '✓ PASS' : '✗ FAIL';
-        console.log(`  ${status} (${(result.durationMs / 1000).toFixed(2)}s)`);
-
-        if (!result.success) {
-          console.log(`  Details: ${result.details.slice(0, 200)}${result.details.length > 200 ? '...' : ''}`);
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-
-        const result: TestResult = {
-          specName,
-          specPath: filePath,
-          success: false,
-          details: `Agent error: ${errorMessage}`,
-          durationMs: Date.now() - specStartTime,
-        };
-
-        results.push(result);
-        console.log(`  ✗ ERROR (${(result.durationMs / 1000).toFixed(2)}s)`);
-        console.log(`  Details: ${errorMessage.slice(0, 200)}`);
       }
-
-      console.log('');
+    } else {
+      // Run in parallel with limited concurrency
+      const allResults = await this.runSpecsInParallel(mdFiles, baseUrl, provider, model, headless, concurrency);
+      results.push(...allResults);
     }
 
     const summary: RunSummary = {
@@ -86,6 +54,171 @@ export class Main {
     this.generateHtmlReport(folderPath, summary, provider, model);
 
     return summary;
+  }
+
+  /**
+   * Run a single spec file and return the result
+   */
+  private async runSingleSpec(
+    filePath: string,
+    baseUrl: string,
+    provider: LLMProvider,
+    model: string | undefined,
+    headless: boolean
+  ): Promise<TestResult> {
+    const specName = basename(filePath);
+    console.log(`Running: ${specName}...`);
+
+    const specStartTime = Date.now();
+
+    try {
+      const markdown = readFileSync(filePath, 'utf-8');
+      const agentResult = await runSpec(markdown, baseUrl, specName, provider, model, headless);
+
+      const result: TestResult = {
+        specName,
+        specPath: filePath,
+        success: agentResult.success,
+        details: agentResult.details,
+        durationMs: Date.now() - specStartTime,
+      };
+
+      const status = result.success ? '✓ PASS' : '✗ FAIL';
+      console.log(`  ${status} ${specName} (${(result.durationMs / 1000).toFixed(2)}s)`);
+
+      if (!result.success) {
+        console.log(`  Details: ${result.details.slice(0, 200)}${result.details.length > 200 ? '...' : ''}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      const result: TestResult = {
+        specName,
+        specPath: filePath,
+        success: false,
+        details: `Agent error: ${errorMessage}`,
+        durationMs: Date.now() - specStartTime,
+      };
+
+      console.log(`  ✗ ERROR ${specName} (${(result.durationMs / 1000).toFixed(2)}s)`);
+      console.log(`  Details: ${errorMessage.slice(0, 200)}`);
+
+      return result;
+    }
+  }
+
+  /**
+   * Run specs in parallel using a pool of isolated MCP clients
+   */
+  private async runSpecsInParallel(
+    files: string[],
+    baseUrl: string,
+    provider: LLMProvider,
+    model: string | undefined,
+    headless: boolean,
+    concurrency: number
+  ): Promise<TestResult[]> {
+    // Create pool with the requested concurrency (limited by number of files)
+    const poolSize = Math.min(concurrency, files.length);
+    const pool = new MCPPool(headless);
+    
+    try {
+      await pool.initialize(poolSize);
+
+      const results: TestResult[] = [];
+      const queue = [...files];
+      const running: Promise<void>[] = [];
+
+      const runNext = async (): Promise<void> => {
+        const filePath = queue.shift();
+        if (!filePath) return;
+
+        const result = await this.runSpecWithPool(pool, filePath, baseUrl, provider, model);
+        results.push(result);
+
+        // Continue with next file if any
+        if (queue.length > 0) {
+          await runNext();
+        }
+      };
+
+      // Start initial batch of concurrent tasks
+      const initialBatch = Math.min(poolSize, queue.length);
+      for (let i = 0; i < initialBatch; i++) {
+        running.push(runNext());
+      }
+
+      // Wait for all to complete
+      await Promise.all(running);
+
+      // Sort results to maintain original file order
+      const fileOrder = new Map(files.map((f, i) => [f, i]));
+      results.sort((a, b) => (fileOrder.get(a.specPath) ?? 0) - (fileOrder.get(b.specPath) ?? 0));
+
+      return results;
+    } finally {
+      // Always clean up the pool
+      await pool.close();
+    }
+  }
+
+  /**
+   * Run a single spec using the MCP pool
+   */
+  private async runSpecWithPool(
+    pool: MCPPool,
+    filePath: string,
+    baseUrl: string,
+    provider: LLMProvider,
+    model: string | undefined
+  ): Promise<TestResult> {
+    const specName = basename(filePath);
+    const { client, id } = await pool.acquire();
+    
+    console.log(`Running: ${specName} (worker ${id})...`);
+    const specStartTime = Date.now();
+
+    try {
+      const markdown = readFileSync(filePath, 'utf-8');
+      const agentResult = await runSpecWithClient(client, markdown, baseUrl, specName, provider, model);
+
+      const result: TestResult = {
+        specName,
+        specPath: filePath,
+        success: agentResult.success,
+        details: agentResult.details,
+        durationMs: Date.now() - specStartTime,
+      };
+
+      const status = result.success ? '✓ PASS' : '✗ FAIL';
+      console.log(`  ${status} ${specName} (${(result.durationMs / 1000).toFixed(2)}s) [worker ${id}]`);
+
+      if (!result.success) {
+        console.log(`  Details: ${result.details.slice(0, 200)}${result.details.length > 200 ? '...' : ''}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      const result: TestResult = {
+        specName,
+        specPath: filePath,
+        success: false,
+        details: `Agent error: ${errorMessage}`,
+        durationMs: Date.now() - specStartTime,
+      };
+
+      console.log(`  ✗ ERROR ${specName} (${(result.durationMs / 1000).toFixed(2)}s) [worker ${id}]`);
+      console.log(`  Details: ${errorMessage.slice(0, 200)}`);
+
+      return result;
+    } finally {
+      // Return client to pool
+      pool.release(id, client);
+    }
   }
 
   /**
