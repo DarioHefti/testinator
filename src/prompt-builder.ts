@@ -31,6 +31,16 @@ A final screenshot will be captured automatically for the report (${screenshotPa
 - Be thorough but efficient - verify what the spec asks for
 - If an element cannot be found or an action fails, the test should FAIL
 - If all specified behaviors work as expected, the test should PASS
+
+## CRITICAL: Form Interactions Must Be Sequential
+When filling out forms (login, signup, search, etc.), you MUST interact with ONE field at a time:
+1. First call browser_type for the FIRST input field, wait for result
+2. Then call browser_type for the SECOND input field, wait for result
+3. Then click submit/button
+
+DO NOT batch multiple browser_click or browser_type calls for different form fields in a single step.
+The browser_type tool already targets a specific element by ref - you don't need to click the field first.
+Parallel form interactions will cause values to be typed into the wrong fields!
 ${screenshotInstruction}
 
 ## Output

@@ -21,6 +21,8 @@ Thumbs.db
 
 # Test outputs
 examples/specs/reports/
+examples/specs_with_auth/reports/
+examples/specs_no_auth/reports/
 
 # Logs
 *.log

@@ -112,7 +112,8 @@ export async function runSpec(
   provider: LLMProvider = 'openai',
   model?: string,
   headless: boolean = true,
-  screenshotPath?: string
+  screenshotPath?: string,
+  workerLabel?: number | string
 ): Promise<AgentResult> {
   // Build MCP args using locally installed @playwright/mcp
   // Chromium is pre-installed via postinstall script
@@ -133,7 +134,7 @@ export async function runSpec(
   });
 
   try {
-    return await runSpecWithClient(mcpClient, markdown, baseUrl, specName, provider, model, screenshotPath);
+    return await runSpecWithClient(mcpClient, markdown, baseUrl, specName, provider, model, screenshotPath, workerLabel);
   } finally {
     // Close the MCP client
     await mcpClient.close();
@@ -151,8 +152,11 @@ export async function runSpecWithClient(
   specName: string,
   provider: LLMProvider = 'openai',
   model?: string,
-  screenshotPath?: string
+  screenshotPath?: string,
+  workerLabel?: number | string
 ): Promise<AgentResult> {
+  const workerPrefix = workerLabel === undefined ? '' : `[worker ${workerLabel}] `;
+
   // Get the language model based on provider
   const languageModel = getLanguageModel(provider, model);
 
@@ -170,7 +174,7 @@ export async function runSpecWithClient(
         finalScreenshotCaptured = await captureFinalScreenshotIfRequested(mcpTools, screenshotPath);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        console.warn(`    [Playwright] Final screenshot capture failed: ${message}`);
+        console.warn(`    ${workerPrefix}[Playwright] Final screenshot capture failed: ${message}`);
       }
       return JSON.stringify(params);
     },
@@ -188,7 +192,7 @@ export async function runSpecWithClient(
   }
 
   // Run the agent with all tools
-  console.log(`    [LLM] Starting agent with ${Object.keys(allTools).length} tools available`);
+  console.log(`    ${workerPrefix}[LLM] Starting agent with ${Object.keys(allTools).length} tools available`);
   const result = await generateText({
     model: languageModel,
     system: buildSystemPrompt(baseUrl, specName, screenshotPath),
@@ -198,13 +202,13 @@ export async function runSpecWithClient(
     onStepFinish: ({ stepType, toolCalls, text }) => {
       if (toolCalls && toolCalls.length > 0) {
         const toolNames = toolCalls.map(tc => tc.toolName).join(', ');
-        console.log(`    [LLM] Step: ${stepType} → Tools: ${toolNames}`);
+        console.log(`    ${workerPrefix}[LLM] Step: ${stepType} → Tools: ${toolNames}`);
       } else if (text) {
-        console.log(`    [LLM] Step: ${stepType} → Response: ${text.slice(0, 80)}${text.length > 80 ? '...' : ''}`);
+        console.log(`    ${workerPrefix}[LLM] Step: ${stepType} → Response: ${text.slice(0, 80)}${text.length > 80 ? '...' : ''}`);
       }
     },
   });
-  console.log(`    [LLM] Completed in ${result.steps.length} steps`);
+  console.log(`    ${workerPrefix}[LLM] Completed in ${result.steps.length} steps`);
 
   // Fallback: if the model never called report_result, still try to capture a final screenshot.
   if (!finalScreenshotCaptured) {
@@ -212,7 +216,7 @@ export async function runSpecWithClient(
       await captureFinalScreenshotIfRequested(mcpTools, screenshotPath);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      console.warn(`    [Playwright] Final screenshot capture failed: ${message}`);
+      console.warn(`    ${workerPrefix}[Playwright] Final screenshot capture failed: ${message}`);
     }
   }
 

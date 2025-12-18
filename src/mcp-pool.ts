@@ -1,6 +1,6 @@
 import { experimental_createMCPClient as createMCPClient } from 'ai';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from 'ai/mcp-stdio';
-import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * Get the path to the locally installed @playwright/mcp CLI
  */
 function getMcpCliPath(): string {
-  // In dist/, go up to project root then into node_modules
   return join(__dirname, '..', 'node_modules', '@playwright', 'mcp', 'cli.js');
 }
 
@@ -20,12 +19,11 @@ type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
 interface PooledClient {
   client: MCPClient;
   id: number;
-  userDataDir: string;
 }
 
 /**
- * Pool of isolated Playwright MCP clients for parallel test execution.
- * Each client has its own browser instance with separate user data directory.
+ * Pool of Playwright MCP clients for parallel test execution.
+ * Each client runs in an isolated browser context with injected auth state.
  */
 export class MCPPool {
   private available: PooledClient[] = [];
@@ -35,14 +33,10 @@ export class MCPPool {
   private storageStatePath: string | undefined;
   private initialized = false;
 
-  /**
-   * @param headless - Run browsers in headless mode
-   * @param storageStatePath - Path to storage state JSON for authenticated sessions
-   */
   constructor(headless: boolean = true, storageStatePath?: string) {
     this.headless = headless;
     this.storageStatePath = storageStatePath;
-    this.baseDir = join(tmpdir(), `testinator-${Date.now()}`);
+    this.baseDir = join(tmpdir(), `testinator-pool-${Date.now()}`);
   }
 
   /**
@@ -51,110 +45,86 @@ export class MCPPool {
   async initialize(size: number): Promise<void> {
     if (this.initialized) return;
 
-    console.log(`  [MCPPool] Creating ${size} isolated browser instance(s)...`);
+    console.log(`  [MCPPool] Creating ${size} browser instance(s)...`);
     if (this.storageStatePath) {
       console.log(`  [MCPPool] Using authenticated session from: ${this.storageStatePath}`);
     }
 
-    // Ensure browsers are available
-    const browserManager = BrowserManager.getInstance();
-    await browserManager.ensureBrowsers(!this.headless);
-    const chromiumPath = this.headless ? browserManager.getChromiumPath() : null;
-
-    // Create base temp directory
     mkdirSync(this.baseDir, { recursive: true });
 
-    // Create clients in parallel (Chromium is pre-installed via postinstall)
-    const createPromises = Array.from({ length: size }, (_, i) => 
-      this.createClient(i)
-    );
+    // Create clients sequentially with delay to avoid port conflicts
+    const clients: PooledClient[] = [];
+    for (let i = 0; i < size; i++) {
+      const client = await this.createClient(i);
+      clients.push(client);
+      // Increased delay for Windows stability
+      if (i < size - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
 
-    const clients = await Promise.all(createPromises);
     this.available = clients;
     this.initialized = true;
 
-    console.log(`  [MCPPool] ${size} isolated browser instance(s) ready`);
+    console.log(`  [MCPPool] ${size} browser instance(s) ready`);
   }
 
   /**
-   * Create a single isolated MCP client.
-   * Uses isolated mode (in-memory profile) to guarantee no lock conflicts between parallel workers.
-   * Storage state is passed via config file when authentication is needed.
-   * Chromium is pre-installed via postinstall script.
+   * Create a single MCP client with isolated browser context.
+   * Storage state (auth tokens) is injected via contextOptions.
    */
   private async createClient(id: number): Promise<PooledClient> {
-    const userDataDir = join(this.baseDir, `agent-${id}`);
-    mkdirSync(userDataDir, { recursive: true });
-
-    // Build MCP args
     const mcpCliPath = getMcpCliPath();
-    const mcpArgs = [mcpCliPath];
+    const workerDir = join(this.baseDir, `worker-${id}`);
+    mkdirSync(workerDir, { recursive: true });
+
+    const mcpArgs: string[] = [mcpCliPath];
     
     if (this.headless) {
       mcpArgs.push('--headless');
     }
-    if (chromiumPath) {
-      mcpArgs.push('--executable-path', chromiumPath);
+
+    // IMPORTANT:
+    // - Use official CLI flags for isolation/session injection (per Playwright MCP docs).
+    // - Do NOT override browserName/launchOptions via config: MCP uses a dynamically chosen
+    //   websocket port for Chromium; overriding via config can lead to "Invalid URL undefined".
+    mcpArgs.push('--isolated');
+    mcpArgs.push('--browser', 'chrome');
+    mcpArgs.push('--user-data-dir', workerDir);
+
+    // Inject auth state if available (isolated sessions).
+    if (this.storageStatePath) {
+      mcpArgs.push('--storage-state', this.storageStatePath);
     }
-    
-    // Always use config file with isolated: true for in-memory profiles (no disk locks!)
-    // This guarantees parallel workers don't conflict
-    const storageState = this.storageStatePath 
-      ? JSON.parse(readFileSync(this.storageStatePath, 'utf-8')) 
-      : undefined;
-    
-    const config = {
-      browser: {
-        isolated: true, // Keep profile in memory, no disk persistence
-        ...(storageState ? { contextOptions: { storageState } } : {}),
-      },
-    };
-    
-    const configPath = join(userDataDir, 'mcp-config.json');
-    writeFileSync(configPath, JSON.stringify(config, null, 2));
-    mcpArgs.push('--config', configPath);
 
     const transport = new StdioMCPTransport({
-      command: process.execPath, // Use current Node.js executable
+      command: process.execPath,
       args: mcpArgs,
     });
 
     const client = await createMCPClient({ transport });
+    console.log(`  [MCPPool] Worker ${id} ready`);
 
-    return { client, id, userDataDir };
+    return { client, id };
   }
 
-  /**
-   * Acquire a client from the pool. Blocks until one is available.
-   */
   async acquire(): Promise<{ client: MCPClient; id: number }> {
-    // Wait for an available client
     while (this.available.length === 0) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-
     const pooled = this.available.shift()!;
     this.inUse.add(pooled.id);
     return { client: pooled.client, id: pooled.id };
   }
 
-  /**
-   * Release a client back to the pool.
-   */
   release(id: number, client: MCPClient): void {
     if (this.inUse.has(id)) {
       this.inUse.delete(id);
-      // Find the userDataDir for this client
-      const userDataDir = join(this.baseDir, `agent-${id}`);
-      this.available.push({ client, id, userDataDir });
+      this.available.push({ client, id });
     }
   }
 
-  /**
-   * Close all clients and clean up resources.
-   */
   async close(): Promise<void> {
-    // Close all available clients
     for (const pooled of this.available) {
       try {
         await pooled.client.close();
@@ -164,7 +134,6 @@ export class MCPPool {
     }
     this.available = [];
 
-    // Clean up temp directories
     try {
       rmSync(this.baseDir, { recursive: true, force: true });
     } catch {
@@ -174,16 +143,10 @@ export class MCPPool {
     this.initialized = false;
   }
 
-  /**
-   * Get the number of available clients.
-   */
   get availableCount(): number {
     return this.available.length;
   }
 
-  /**
-   * Get the total pool size.
-   */
   get totalSize(): number {
     return this.available.length + this.inUse.size;
   }
