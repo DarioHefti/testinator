@@ -4,7 +4,6 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BrowserManager } from './browser-setup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -65,9 +64,9 @@ export class MCPPool {
     // Create base temp directory
     mkdirSync(this.baseDir, { recursive: true });
 
-    // Create clients in parallel
+    // Create clients in parallel (Chromium is pre-installed via postinstall)
     const createPromises = Array.from({ length: size }, (_, i) => 
-      this.createClient(i, chromiumPath)
+      this.createClient(i)
     );
 
     const clients = await Promise.all(createPromises);
@@ -81,8 +80,9 @@ export class MCPPool {
    * Create a single isolated MCP client.
    * Uses isolated mode (in-memory profile) to guarantee no lock conflicts between parallel workers.
    * Storage state is passed via config file when authentication is needed.
+   * Chromium is pre-installed via postinstall script.
    */
-  private async createClient(id: number, chromiumPath: string | null): Promise<PooledClient> {
+  private async createClient(id: number): Promise<PooledClient> {
     const userDataDir = join(this.baseDir, `agent-${id}`);
     mkdirSync(userDataDir, { recursive: true });
 
