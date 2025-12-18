@@ -4,7 +4,6 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { AgentResultSchema, type AgentResult, type LLMProvider } from './types.js';
-import { BrowserManager } from './browser-setup.js';
 import { getLanguageModel } from './llm-providers.js';
 import { normalizeToolsForAzure } from './azure-compat.js';
 import { buildSystemPrompt } from './prompt-builder.js';
@@ -115,23 +114,13 @@ export async function runSpec(
   headless: boolean = true,
   screenshotPath?: string
 ): Promise<AgentResult> {
-  // Ensure Playwright browsers are available
-  // For headed mode, we need Playwright's bundled browser (better Wayland support)
-  const browserManager = BrowserManager.getInstance();
-  await browserManager.ensureBrowsers(!headless);
-
   // Build MCP args using locally installed @playwright/mcp
-  const chromiumPath = headless ? browserManager.getChromiumPath() : null;
+  // Chromium is pre-installed via postinstall script
   const mcpCliPath = getMcpCliPath();
   const mcpArgs = [mcpCliPath];
   if (headless) {
     mcpArgs.push('--headless');
   }
-  if (chromiumPath) {
-    mcpArgs.push('--executable-path', chromiumPath);
-  }
-
-  console.log(`  [Playwright] Mode: ${headless ? 'headless' : 'headed'}`);
   
   const transport = new StdioMCPTransport({
     command: process.execPath, // Use current Node.js executable

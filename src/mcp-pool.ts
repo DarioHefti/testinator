@@ -4,7 +4,6 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BrowserManager } from './browser-setup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,17 +47,12 @@ export class MCPPool {
 
     console.log(`  [MCPPool] Creating ${size} isolated browser instance(s)...`);
 
-    // Ensure browsers are available
-    const browserManager = BrowserManager.getInstance();
-    await browserManager.ensureBrowsers(!this.headless);
-    const chromiumPath = this.headless ? browserManager.getChromiumPath() : null;
-
     // Create base temp directory
     mkdirSync(this.baseDir, { recursive: true });
 
-    // Create clients in parallel
+    // Create clients in parallel (Chromium is pre-installed via postinstall)
     const createPromises = Array.from({ length: size }, (_, i) => 
-      this.createClient(i, chromiumPath)
+      this.createClient(i)
     );
 
     const clients = await Promise.all(createPromises);
@@ -71,8 +65,9 @@ export class MCPPool {
   /**
    * Create a single isolated MCP client.
    * Each client uses a unique user-data-dir for browser isolation (works on all platforms).
+   * Chromium is pre-installed via postinstall script.
    */
-  private async createClient(id: number, chromiumPath: string | null): Promise<PooledClient> {
+  private async createClient(id: number): Promise<PooledClient> {
     const userDataDir = join(this.baseDir, `agent-${id}`);
     mkdirSync(userDataDir, { recursive: true });
 
@@ -82,9 +77,6 @@ export class MCPPool {
     
     if (this.headless) {
       mcpArgs.push('--headless');
-    }
-    if (chromiumPath) {
-      mcpArgs.push('--executable-path', chromiumPath);
     }
 
     const transport = new StdioMCPTransport({
