@@ -1,31 +1,24 @@
-export type EscapeHtml = (text: string) => string;
-
-export interface HtmlReportTemplateParams {
+export interface HtmlReportShellParams {
+  /**
+   * These are only used as initial placeholders until summary.js is loaded.
+   * The real values come from window.__TESTINATOR_RUN__.
+   */
   provider: string;
   model?: string;
   timestamp: string;
-  authHtml: string;
-  resultsHtml: string;
-  totalTests: number;
-  passCount: number;
-  failCount: number;
-  totalDurationMs: number;
-  escapeHtml: EscapeHtml;
 }
 
-export function buildHtmlReportPage(params: HtmlReportTemplateParams): string {
-  const {
-    provider,
-    model,
-    timestamp,
-    authHtml,
-    resultsHtml,
-    totalTests,
-    passCount,
-    failCount,
-    totalDurationMs,
-    escapeHtml,
-  } = params;
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+export function buildHtmlReportPage(params: HtmlReportShellParams): string {
+  const { provider, model, timestamp } = params;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -282,37 +275,37 @@ export function buildHtmlReportPage(params: HtmlReportTemplateParams): string {
     <header>
       <h1>Testinator Report</h1>
       <p class="meta">
-        <span>Provider: ${escapeHtml(provider)}</span>
+        <span>Provider: <span id="metaProvider">${escapeHtml(provider)}</span></span>
         <span>|</span>
-        <span>Model: ${escapeHtml(model ?? 'default')}</span>
+        <span>Model: <span id="metaModel">${escapeHtml(model ?? 'default')}</span></span>
         <span>|</span>
-        <span>${escapeHtml(timestamp)}</span>
+        <span id="metaTimestamp">${escapeHtml(timestamp)}</span>
       </p>
     </header>
 
-    ${authHtml}
+    <div id="authRoot"></div>
 
     <div class="summary">
       <div class="stat">
-        <div class="stat-value">${totalTests}</div>
+        <div id="statTotalTests" class="stat-value">0</div>
         <div class="stat-label">Total Tests</div>
       </div>
       <div class="stat stat-pass">
-        <div class="stat-value">${passCount}</div>
+        <div id="statPassed" class="stat-value">0</div>
         <div class="stat-label">Passed</div>
       </div>
       <div class="stat stat-fail">
-        <div class="stat-value">${failCount}</div>
+        <div id="statFailed" class="stat-value">0</div>
         <div class="stat-label">Failed</div>
       </div>
       <div class="stat">
-        <div class="stat-value">${(totalDurationMs / 1000).toFixed(1)}s</div>
+        <div id="statDuration" class="stat-value">0.0s</div>
         <div class="stat-label">Duration</div>
       </div>
     </div>
 
     <div class="folder-tree">
-      ${resultsHtml}
+      <div id="resultsRoot"></div>
     </div>
   </div>
 
@@ -324,7 +317,20 @@ export function buildHtmlReportPage(params: HtmlReportTemplateParams): string {
     </div>
   </div>
 
+  <script src="./summary.js"></script>
   <script>
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = String(value ?? '');
+    }
+
+    function setHtml(id, html) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = String(html ?? '');
+    }
+
     function toggleFolder(el) {
       el.closest('.folder').classList.toggle('collapsed');
     }
@@ -348,9 +354,32 @@ export function buildHtmlReportPage(params: HtmlReportTemplateParams): string {
       img.src = '';
     }
 
+    function renderReportFromSummaryData(data) {
+      if (!data || typeof data !== 'object') return;
+
+      setText('metaProvider', data.provider ?? '');
+      setText('metaModel', data.model ?? 'default');
+      setText('metaTimestamp', data.timestamp ?? '');
+
+      setHtml('authRoot', data.authHtml ?? '');
+      setHtml('resultsRoot', data.resultsHtml ?? '');
+
+      setText('statTotalTests', data.totalTests ?? 0);
+      setText('statPassed', data.passCount ?? 0);
+      setText('statFailed', data.failCount ?? 0);
+
+      const durationMs = Number(data.totalDurationMs ?? 0);
+      const durationText = Number.isFinite(durationMs) ? (durationMs / 1000).toFixed(1) + 's' : '0.0s';
+      setText('statDuration', durationText);
+    }
+
     document.addEventListener('keydown', function(event) {
       if (event.key === 'Escape') closeModal();
     });
+
+    // summary.js populates window.__TESTINATOR_RUN__.
+    // This works with file:// access (double-click open).
+    renderReportFromSummaryData(window.__TESTINATOR_RUN__);
   </script>
 </body>
 </html>`;

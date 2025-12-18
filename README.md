@@ -40,6 +40,7 @@ or
 Each run writes a fresh report folder inside your spec folder:
 
 - `./specs/reports/index.html` (summary report)
+- `./specs/reports/summary.js` (report data loaded by `index.html` for file:// compatibility)
 - `./specs/reports/images/*.jpg` (final-state screenshots, one per spec)
 - `./specs/reports/images/auth_login.jpg` (auth page screenshot, if using authentication)
 

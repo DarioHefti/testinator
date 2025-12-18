@@ -9,6 +9,18 @@ import { buildHtmlReportPage } from './report-html-template.js';
 /** Name of the authentication spec file */
 const AUTH_SPEC_NAME = 'AUTH_LOGIN.md';
 
+type ReportSummaryData = {
+  provider: string;
+  model?: string;
+  timestamp: string;
+  authHtml: string;
+  resultsHtml: string;
+  totalTests: number;
+  passCount: number;
+  failCount: number;
+  totalDurationMs: number;
+};
+
 export class Main {
   /**
    * Run all markdown specs in the given folder (recursively)
@@ -23,6 +35,7 @@ export class Main {
   ): Promise<RunSummary> {
     const startTime = Date.now();
     let authResult: RunSummary['authResult'] | undefined;
+    const runTimestamp = this.getTimestamp();
 
     // Quick check to verify LLM connection before running tests
     await checkLLMConnection(provider, model);
@@ -34,6 +47,16 @@ export class Main {
       rmSync(reportsDir, { recursive: true, force: true });
     }
     mkdirSync(imagesDir, { recursive: true });
+
+    // Write an initial empty report shell (and summary.js) right away.
+    // This ensures the user can open reports/index.html even while tests are running.
+    const initialSummary: RunSummary = {
+      results: [],
+      allPassed: true,
+      totalDurationMs: 0,
+      timestamp: runTimestamp,
+    };
+    this.generateHtmlReport(reportsDir, initialSummary, provider, model, folderPath);
 
     // Check for AUTH_LOGIN.md in the root of specs folder
     const authSpecPath = join(folderPath, AUTH_SPEC_NAME);
@@ -58,6 +81,16 @@ export class Main {
         error: result.error,
         screenshotPath: result.screenshotPath,
       };
+
+      // Update report with auth status as soon as it completes.
+      const authOnlySummary: RunSummary = {
+        results: [],
+        allPassed: result.success,
+        totalDurationMs: Date.now() - startTime,
+        timestamp: runTimestamp,
+        authResult,
+      };
+      this.generateHtmlReport(reportsDir, authOnlySummary, provider, model, folderPath);
       
       if (!result.success) {
         // Auth failed - abort test run
@@ -65,7 +98,7 @@ export class Main {
           results: [],
           allPassed: false,
           totalDurationMs: Date.now() - startTime,
-          timestamp: this.getTimestamp(),
+          timestamp: runTimestamp,
           authResult,
         };
         this.generateHtmlReport(reportsDir, summary, provider, model, folderPath);
@@ -86,6 +119,31 @@ export class Main {
     console.log(`Found ${mdFiles.length} spec file(s) to run\n`);
 
     let results: TestResult[];
+    let reportWriteChain: Promise<void> = Promise.resolve();
+    let reportWriteTimer: NodeJS.Timeout | undefined;
+    let latestProgressResults: TestResult[] = [];
+    const progressDebounceMs = 200;
+
+    const scheduleProgressReportWrite = (orderedResults: TestResult[]): void => {
+      latestProgressResults = orderedResults;
+      if (reportWriteTimer) return;
+      reportWriteTimer = setTimeout(() => {
+        reportWriteTimer = undefined;
+        const snapshot = latestProgressResults;
+        const folderTree = this.buildFolderTree(snapshot, folderPath);
+        const progressSummary: RunSummary = {
+          results: snapshot,
+          allPassed: snapshot.every((r) => r.success),
+          totalDurationMs: Date.now() - startTime,
+          timestamp: runTimestamp,
+          folderTree,
+          authResult,
+        };
+        reportWriteChain = reportWriteChain.then(() => {
+          this.generateHtmlReport(reportsDir, progressSummary, provider, model, folderPath);
+        });
+      }, progressDebounceMs);
+    };
     
     // Always run in parallel mode (using pool), pass storage state if available
     results = await this.runSpecsInParallel(
@@ -96,7 +154,8 @@ export class Main {
       headless, 
       concurrency, 
       imagesDir,
-      storageStatePath
+      storageStatePath,
+      scheduleProgressReportWrite
     );
 
     // Build folder tree for hierarchical report
@@ -106,12 +165,17 @@ export class Main {
       results,
       allPassed: results.every((r) => r.success),
       totalDurationMs: Date.now() - startTime,
-      timestamp: this.getTimestamp(),
+      timestamp: runTimestamp,
       folderTree,
       authResult,
     };
 
     // Generate HTML report in reports folder
+    if (reportWriteTimer) {
+      clearTimeout(reportWriteTimer);
+      reportWriteTimer = undefined;
+    }
+    await reportWriteChain;
     this.generateHtmlReport(reportsDir, summary, provider, model, folderPath);
 
     return summary;
@@ -190,7 +254,8 @@ export class Main {
     headless: boolean,
     concurrency: number,
     imagesDir: string,
-    storageStatePath?: string
+    storageStatePath?: string,
+    onResult?: (orderedResults: TestResult[]) => void
   ): Promise<TestResult[]> {
     if (files.length === 0) {
       return [];
@@ -206,6 +271,7 @@ export class Main {
       const results: TestResult[] = [];
       const queue = [...files];
       const running: Promise<void>[] = [];
+      const fileOrder = new Map(files.map((f, i) => [f, i]));
 
       const runNext = async (): Promise<void> => {
         const filePath = queue.shift();
@@ -213,6 +279,16 @@ export class Main {
 
         const result = await this.runSpecWithPool(pool, filePath, baseUrl, provider, model, imagesDir);
         results.push(result);
+        if (onResult) {
+          const orderedSnapshot = [...results].sort(
+            (a, b) => (fileOrder.get(a.specPath) ?? 0) - (fileOrder.get(b.specPath) ?? 0)
+          );
+          try {
+            onResult(orderedSnapshot);
+          } catch {
+            // Ignore reporter errors so they don't impact the test run.
+          }
+        }
 
         // Continue with next file if any
         if (queue.length > 0) {
@@ -230,7 +306,6 @@ export class Main {
       await Promise.all(running);
 
       // Sort results to maintain original file order
-      const fileOrder = new Map(files.map((f, i) => [f, i]));
       results.sort((a, b) => (fileOrder.get(a.specPath) ?? 0) - (fileOrder.get(b.specPath) ?? 0));
 
       return results;
@@ -475,22 +550,40 @@ export class Main {
       ? this.renderFolderTree(summary.folderTree)
       : summary.results.map((r) => this.renderResultCard(r)).join('');
 
-    const html = buildHtmlReportPage({
+    const reportData: ReportSummaryData = {
       provider,
       model,
       timestamp: summary.timestamp,
       authHtml,
       resultsHtml,
-      totalTests: summary.results.length,
       passCount,
       failCount,
       totalDurationMs: summary.totalDurationMs,
-      escapeHtml: (text) => this.escapeHtml(text),
-    });
+      totalTests: summary.results.length,
+    };
 
+    this.writeReportSummaryJs(reportsDir, reportData);
+
+    const html = buildHtmlReportPage({ provider, model, timestamp: summary.timestamp });
     const reportPath = join(reportsDir, 'index.html');
     writeFileSync(reportPath, html, 'utf-8');
     console.log(`HTML report written to: ${reportPath}`);
+  }
+
+  private writeReportSummaryJs(reportsDir: string, data: ReportSummaryData): void {
+    const summaryPath = join(reportsDir, 'summary.js');
+    const json = JSON.stringify(data)
+      // Prevent U+2028/U+2029 from breaking JS parsing in string literals.
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029')
+      // Defensive: avoid generating raw "<" sequences (e.g. "</script>") if this JS is ever embedded.
+      .replace(/</g, '\\u003c');
+
+    const contents = `// Auto-generated by Testinator. Do not edit.
+// This file is loaded by reports/index.html via <script src="./summary.js"></script>
+window.__TESTINATOR_RUN__ = ${json};
+`;
+    writeFileSync(summaryPath, contents, 'utf-8');
   }
 
   /**

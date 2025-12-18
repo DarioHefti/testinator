@@ -28,11 +28,15 @@ Testinator is a **Node/TypeScript CLI** that runs **Markdown-written E2E specs**
 1. You run the CLI (e.g. `testinator ./specs --base-url https://your-app.com`).
 2. The CLI validates inputs and environment variables.
 3. The runner (`Main.run`) performs a quick LLM connectivity check.
-4. The runner finds `*.md` files in the specified folder (non-recursive).
+4. The runner finds `*.md` files in the specified folder (recursive), excluding `reports/` and `AUTH_LOGIN.md`.
 5. For each spec file, the runner calls the agent (`runSpec`).
 6. The agent starts Playwright MCP (headless) and asks the LLM to execute the markdown spec using MCP browser tools.
 7. The LLM is expected to call `report_result { success, details }` at the end.
-8. The runner aggregates results and writes an HTML report to `<specFolder>/reports/index.html`, plus final-state screenshots to `<specFolder>/reports/images/*.jpg`.
+8. The runner writes report artifacts to `<specFolder>/reports/`:
+   - `index.html` (static shell)
+   - `summary.js` (data loaded by `index.html`, compatible with file:// double-click open)
+   - `images/*.jpg` (final-state screenshots, one per spec)
+   The runner updates `summary.js` (and rewrites `index.html`) as specs complete, so the report can be generated “on the fly”.
 9. The CLI exits with `0` if all passed, otherwise `1`.
 
 ---
@@ -103,7 +107,7 @@ Before running any tests, `src/main.ts` calls:
 
 This sends a tiny prompt ("Reply with just \"ok\"") to ensure the chosen provider/model is reachable.
 
-#### 2) Spec discovery (non-recursive)
+#### 2) Spec discovery (recursive)
 
 The runner lists directory entries and selects files that:
 
@@ -112,10 +116,12 @@ The runner lists directory entries and selects files that:
 
 Important behavior:
 
-- **Non-recursive**: only the immediate folder is scanned.
-- Sorted by name.
+- **Recursive**: scans subfolders too.
+- Skips the `reports/` folder.
+- Skips `AUTH_LOGIN.md`.
+- Sorted by path.
 
-#### 3) Sequential spec execution
+#### 3) Spec execution
 
 For each `.md` file:
 
@@ -126,13 +132,14 @@ For each `.md` file:
   - `details` (string)
   - `durationMs`
 
-Specs run **sequentially** (no parallelism).
+Specs run in **parallel by default** using a pool of isolated MCP clients (configurable concurrency).
 
-#### 4) HTML report
+#### 4) Report output (`reports/`)
 
-After all specs finish, the runner writes:
+The runner writes:
 
-- `<specFolder>/reports/index.html`
+- `<specFolder>/reports/index.html` (static report shell)
+- `<specFolder>/reports/summary.js` (report data loaded by `index.html`)
 - `<specFolder>/reports/images/*.jpg` (final-state screenshot per spec)
 
 The report includes:
@@ -143,7 +150,7 @@ The report includes:
   - duration
   - `details` text (pre-wrapped)
 
-This is a standalone static HTML file that references images from the `reports/images/` folder.
+This is a standalone static HTML report that references images from the `reports/images/` folder and loads its data from `summary.js` (so it works when opened via file://).
 
 ---
 
