@@ -92,7 +92,7 @@ export async function checkLLMConnection(provider: LLMProvider, model?: string):
     const { text } = await generateText({
       model: languageModel,
       prompt: 'Reply with just "ok"',
-      maxTokens: 10,
+      maxTokens: 16,
     });
     console.log(`✓ ${provider} connection OK (response: "${text.trim()}")\n`);
   } catch (error) {
@@ -183,7 +183,7 @@ export async function runSpecWithClient(
   };
   
   // Azure OpenAI has stricter schema requirements - normalize tools
-  if (provider === 'azure') {
+  if (provider === 'azure' || provider === 'azure-openai') {
     allTools = normalizeToolsForAzure(allTools);
   }
 

@@ -4,27 +4,22 @@ Spec Driven E2E Testing via AI Agent steering playwright
 
 ## Setup
 
-Create a `.env` file:
+For an Azure OpenAI-compatible endpoint with `gpt-6-luna`, configure:
 
 ```env
-# Required: API key for your provider
-OPENAI_API_KEY=sk-...
-# or
-ANTHROPIC_API_KEY=sk-ant-...
-# or
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_RESOURCE_NAME=your-resource-name-or-full-url
-# or
-GOOGLE_API_KEY=...
-
-# Optional: Set defaults (CLI args override these)
-TESTINATOR_PROVIDER=openai
-TESTINATOR_MODEL=gpt-4o
+TESTINATOR_PROVIDER=azure-openai
+TESTINATOR_MODEL=gpt-6-luna
+AZURE_BASE_URL=https://your-endpoint/openai/v1
 ```
+
+Provide `AZURE_API_KEY` through the process environment or a secret manager before running the CLI. Keep the key out of version control.
+
+GPT-6 runs through Azure AI Foundry's Responses API so it can use browser function tools with `xhigh` reasoning.
 
 ## RUN IT
 
 ```bash
+npm ci
 npm run build
 ```
 ```bash
@@ -44,7 +39,7 @@ Each run writes a fresh report folder inside your spec folder:
 
 ### Options
 
-- `--provider <provider>` - LLM provider: openai, anthropic, azure, google (default: openai)
+- `--provider <provider>` - LLM provider: openai, anthropic, azure, azure-openai, google (default: openai unless set in `.env`)
 - `--model <model>` - Model name (defaults to provider's recommended model)
 - `--headed` - Run browser in headed mode (visible browser window)
 - `--sequential` - Run specs one at a time (default: parallel with CPU core count)
@@ -54,4 +49,5 @@ Each run writes a fresh report folder inside your spec folder:
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `azure` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_RESOURCE_NAME` |
+| `azure-openai` | `AZURE_API_KEY`, `AZURE_BASE_URL` |
 | `google` | `GOOGLE_API_KEY` |

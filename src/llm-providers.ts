@@ -4,6 +4,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createAzure } from '@ai-sdk/azure';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { type LLMProvider, DEFAULT_MODELS } from './types.js';
+import { adaptGpt6ResponsesBody } from './azure-compat.js';
 
 /**
  * Get the language model instance based on provider and model name.
@@ -42,6 +43,39 @@ export function getLanguageModel(provider: LLMProvider, model?: string): Languag
         resourceName,
       });
       return azure(modelName);
+    }
+    case 'azure-openai': {
+      const apiKey = process.env.AZURE_API_KEY;
+      const baseURL = process.env.AZURE_BASE_URL;
+
+      if (!apiKey) {
+        throw new Error('AZURE_API_KEY is required for the azure-openai provider');
+      }
+      if (!baseURL) {
+        throw new Error('AZURE_BASE_URL is required for the azure-openai provider');
+      }
+
+      const openai = createOpenAI({
+        apiKey,
+        baseURL,
+        name: 'azure-openai',
+        compatibility: 'compatible',
+        fetch: (input, init) => {
+          const body = init?.body;
+          if (typeof body !== 'string') {
+            return globalThis.fetch(input, init);
+          }
+
+          const compatibleBody = adaptGpt6ResponsesBody(body);
+          return globalThis.fetch(input, compatibleBody === body ? init : { ...init, body: compatibleBody });
+        },
+      });
+
+      if (modelName === 'gpt-6-luna') {
+        return openai.responses(modelName);
+      }
+
+      return openai(modelName);
     }
     case 'google': {
       const google = createGoogleGenerativeAI({

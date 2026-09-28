@@ -50,7 +50,7 @@ export interface RunSummary {
 /**
  * Supported LLM providers
  */
-export type LLMProvider = 'openai' | 'anthropic' | 'azure' | 'google';
+export type LLMProvider = 'openai' | 'anthropic' | 'azure' | 'azure-openai' | 'google';
 
 /**
  * Configuration for the agent
@@ -70,5 +70,6 @@ export const DEFAULT_MODELS: Record<LLMProvider, string> = {
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-20250514',
   azure: 'gpt-4o',
+  'azure-openai': 'gpt-6-luna',
   google: 'gemini-1.5-pro',
 };

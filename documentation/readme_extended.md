@@ -2,6 +2,10 @@
 
 Testinator is a **Node/TypeScript CLI** that runs **Markdown-written E2E specs** by handing them to an LLM that can **call Playwright browser actions via MCP (Model Context Protocol)**. The LLM drives a real headless browser and then returns a structured pass/fail result.
 
+### First-time setup
+
+Run `npm ci` to install the locked project dependencies, then `npm run build` to compile the CLI into `dist/cli.js` before invoking it with Node.
+
 ### Repo map (the important files)
 
 - **CLI entrypoint**: `src/cli.ts`
@@ -11,9 +15,9 @@ Testinator is a **Node/TypeScript CLI** that runs **Markdown-written E2E specs**
 - **Agent (LLM + Playwright MCP bridge)**: `src/agent.ts`
   - Spawns Playwright MCP as a subprocess, exposes MCP tools to the model, and extracts `report_result`.
 - **LLM Provider Factory**: `src/llm-providers.ts`
-  - Creates language model instances for each supported provider (OpenAI, Anthropic, Azure, Google).
+  - Creates language model instances for each supported provider (OpenAI, Anthropic, Azure, Azure AI Foundry via OpenAI-compatible API, Google).
 - **Azure Compatibility**: `src/azure-compat.ts`
-  - Normalizes tool schemas for Azure OpenAI's stricter requirements.
+  - Normalizes Azure tool schemas and adapts GPT-6 requests for the Responses API, including `xhigh` reasoning and default-only sampling.
 - **Prompt Builder**: `src/prompt-builder.ts`
   - Constructs the system prompt for the E2E testing agent.
 - **Browser Manager**: `src/browser-setup.ts`
@@ -54,7 +58,7 @@ This loads environment variables from a `.env` file in the current working direc
 - **Positional**: `<spec-folder>` (path to folder containing `.md` specs)
 - **Required flag**: `--base-url <url>`
 - **Optional flags**:
-  - `--provider <openai|anthropic|azure|google>`
+  - `--provider <openai|anthropic|azure|azure-openai|google>`
   - `--model <modelName>`
 
 Defaults:
@@ -70,12 +74,15 @@ Validation performed by the CLI:
 
 - Spec folder exists and is a directory
 - `--base-url` parses as a valid URL
-- Provider is one of `openai`, `anthropic`, `azure`, `google`
+- Provider is one of `openai`, `anthropic`, `azure`, `azure-openai`, `google`
 - Provider-required environment variables are present:
   - `openai`: `OPENAI_API_KEY`
   - `anthropic`: `ANTHROPIC_API_KEY`
   - `azure`: `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_RESOURCE_NAME`
+  - `azure-openai`: `AZURE_API_KEY` and `AZURE_BASE_URL` (the OpenAI-compatible endpoint)
   - `google`: `GOOGLE_API_KEY`
+
+Set `TESTINATOR_PROVIDER=azure-openai`, `TESTINATOR_MODEL=gpt-6-luna`, and `AZURE_BASE_URL` in `.env`. The provider uses `@ai-sdk/openai`'s Responses API with the configured OpenAI-compatible endpoint. A request adapter sends `reasoning.effort: xhigh` and removes unsupported sampling settings. Supply `AZURE_API_KEY` outside `.env` through the process environment or a secret manager; do not commit the key.
 
 If any required input is missing, it prints usage and exits non-zero.
 
@@ -213,7 +220,7 @@ All tools passed to the model are:
 
 Azure-specific handling:
 
-- If provider is `azure`, tool schemas are normalized to satisfy Azure OpenAI’s stricter function schema requirements.
+- If provider is `azure` or `azure-openai`, tool schemas are normalized to satisfy Azure OpenAI’s stricter function schema requirements.
 - The normalization forces object properties to appear in `required` recursively.
 
 #### 4) The system prompt (what the LLM is told to do)

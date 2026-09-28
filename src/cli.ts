@@ -16,7 +16,7 @@ interface CliArgs {
   concurrency: number;
 }
 
-const VALID_PROVIDERS = ['openai', 'anthropic', 'azure', 'google'] as const;
+const VALID_PROVIDERS = ['openai', 'anthropic', 'azure', 'azure-openai', 'google'] as const;
 
 function printUsage(): void {
   console.log(`
@@ -29,7 +29,7 @@ Required:
   --base-url <url>        Base URL of the application under test
 
 Options:
-  --provider <provider>   LLM provider: openai, anthropic, azure, google (default: openai)
+  --provider <provider>   LLM provider: openai, anthropic, azure, azure-openai, google (default: openai)
   --model <model>         Model name (defaults to provider's recommended model)
   --headed                Run browser in headed mode (visible browser window)
   --sequential            Run specs one at a time (default: parallel with CPU core count)
@@ -43,18 +43,22 @@ Environment Variables:
   ANTHROPIC_API_KEY       Required for Anthropic provider
   AZURE_OPENAI_API_KEY    Required for Azure provider
   AZURE_OPENAI_RESOURCE_NAME  Required for Azure provider
+  AZURE_API_KEY          Required for azure-openai provider
+  AZURE_BASE_URL         Required OpenAI-compatible endpoint for azure-openai provider
   GOOGLE_API_KEY          Required for Google provider
 
 Default Models:
   openai:    ${DEFAULT_MODELS.openai}
   anthropic: ${DEFAULT_MODELS.anthropic}
   azure:     ${DEFAULT_MODELS.azure}
+  azure-openai: ${DEFAULT_MODELS['azure-openai']}
   google:    ${DEFAULT_MODELS.google}
 
 Examples:
   testinator ./specs --base-url https://example.com
   testinator ./specs --base-url https://example.com --provider anthropic
   testinator ./specs --base-url https://example.com --provider openai --model gpt-4-turbo
+  testinator ./specs --base-url https://example.com --provider azure-openai --model gpt-6-luna
   testinator ./specs --base-url https://example.com --headed
   testinator ./specs --base-url https://example.com --sequential
 `);
@@ -174,6 +178,10 @@ function validateProviderEnv(provider: LLMProvider): string[] {
     case 'azure':
       if (!process.env.AZURE_OPENAI_API_KEY) errors.push('AZURE_OPENAI_API_KEY');
       if (!process.env.AZURE_OPENAI_RESOURCE_NAME) errors.push('AZURE_OPENAI_RESOURCE_NAME');
+      break;
+    case 'azure-openai':
+      if (!process.env.AZURE_API_KEY) errors.push('AZURE_API_KEY');
+      if (!process.env.AZURE_BASE_URL) errors.push('AZURE_BASE_URL');
       break;
     case 'google':
       if (!process.env.GOOGLE_API_KEY) errors.push('GOOGLE_API_KEY');
